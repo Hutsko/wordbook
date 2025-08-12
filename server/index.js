@@ -34,6 +34,11 @@ CREATE TABLE IF NOT EXISTS sentences (
   created_at INTEGER NOT NULL,
   FOREIGN KEY(word_id) REFERENCES words(id) ON DELETE CASCADE
 );
+CREATE TABLE IF NOT EXISTS custom_phrases (
+  id TEXT PRIMARY KEY,
+  phrase TEXT NOT NULL UNIQUE,
+  created_at INTEGER NOT NULL
+);
 `)
 
 // Lists
@@ -111,7 +116,37 @@ app.delete('/api/sentences/:id', (req, res) => {
   res.json({ ok: true })
 })
 
-const port = process.env.PORT || 5174
+// Custom Phrases
+app.get('/api/custom-phrases', (req, res) => {
+  const rows = db.prepare('SELECT id, phrase, created_at as createdAt FROM custom_phrases ORDER BY created_at ASC').all()
+  res.json(rows)
+})
+
+app.post('/api/custom-phrases', (req, res) => {
+  const { id, phrase, createdAt } = req.body
+  try {
+    db.prepare('INSERT INTO custom_phrases (id, phrase, created_at) VALUES (?, ?, ?)').run(id, phrase, createdAt)
+    res.status(201).json({ ok: true })
+  } catch (error) {
+    if (error.code === 'SQLITE_CONSTRAINT_UNIQUE') {
+      res.status(409).json({ error: 'Phrase already exists' })
+    } else {
+      res.status(500).json({ error: 'Failed to add phrase' })
+    }
+  }
+})
+
+app.delete('/api/custom-phrases/:id', (req, res) => {
+  db.prepare('DELETE FROM custom_phrases WHERE id = ?').run(req.params.id)
+  res.json({ ok: true })
+})
+
+app.delete('/api/custom-phrases', (req, res) => {
+  db.prepare('DELETE FROM custom_phrases').run()
+  res.json({ ok: true })
+})
+
+const port = process.env.PORT || 5175
 app.listen(port, () => console.log(`API listening on http://localhost:${port}`))
 
 

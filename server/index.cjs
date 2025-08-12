@@ -34,7 +34,45 @@ CREATE TABLE IF NOT EXISTS sentences (
   created_at INTEGER NOT NULL,
   FOREIGN KEY(word_id) REFERENCES words(id) ON DELETE CASCADE
 );
+CREATE TABLE IF NOT EXISTS custom_phrases (
+  id TEXT PRIMARY KEY,
+  phrase TEXT NOT NULL UNIQUE,
+  created_at INTEGER NOT NULL
+);
 `)
+
+// Add frequency column to existing words table if it doesn't exist
+try {
+  db.exec('ALTER TABLE words ADD COLUMN frequency INTEGER NOT NULL DEFAULT 50')
+  console.log('Added frequency column to words table')
+} catch (error) {
+  // Column already exists, ignore error
+  console.log('Frequency column already exists or error adding it:', error.message)
+}
+
+// Seed default phrases once (only if table is empty)
+try {
+  const { count } = db.prepare('SELECT COUNT(1) as count FROM custom_phrases').get()
+  if (Number(count) === 0) {
+    const defaultPhrases = [
+      'Excerpt From',
+      'This material may be protected by copyright.',
+      'All rights reserved.',
+      'Reprinted with permission.',
+      'Source:',
+      'From the book:',
+      'Chapter',
+      'Page',
+    ]
+    const insert = db.prepare('INSERT INTO custom_phrases (id, phrase, created_at) VALUES (?, ?, ?)')
+    const now = Date.now()
+    defaultPhrases.forEach((phrase, idx) => {
+      insert.run(`${idx}-${now}`, phrase, now + idx)
+    })
+  }
+} catch (err) {
+  console.error('Failed to seed default custom phrases', err)
+}
 
 app.get('/api/lists', (req, res) => {
   const rows = db.prepare(`
@@ -63,21 +101,21 @@ app.delete('/api/lists/:id', (req, res) => {
 })
 
 app.get('/api/lists/:listId/words', (req, res) => {
-  const rows = db.prepare('SELECT id, term, transcription, definition, strength, created_at as createdAt FROM words WHERE list_id = ? ORDER BY created_at DESC').all(req.params.listId)
+  const rows = db.prepare('SELECT id, term, transcription, definition, strength, frequency, created_at as createdAt FROM words WHERE list_id = ? ORDER BY created_at DESC').all(req.params.listId)
   res.json(rows)
 })
 
 app.post('/api/lists/:listId/words', (req, res) => {
-  const { id, term, transcription, definition, strength = 0, createdAt } = req.body
-  db.prepare('INSERT INTO words (id, list_id, term, transcription, definition, strength, created_at) VALUES (?, ?, ?, ?, ?, ?, ?)')
-    .run(id, req.params.listId, term, transcription, definition, strength, createdAt)
+  const { id, term, transcription, definition, strength = 0, frequency = 50, createdAt } = req.body
+  db.prepare('INSERT INTO words (id, list_id, term, transcription, definition, strength, frequency, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)')
+    .run(id, req.params.listId, term, transcription, definition, strength, frequency, createdAt)
   res.status(201).json({ ok: true })
 })
 
 app.patch('/api/words/:id', (req, res) => {
-  const { term, transcription, definition, strength } = req.body
-  db.prepare('UPDATE words SET term = ?, transcription = ?, definition = ?, strength = COALESCE(?, strength) WHERE id = ?')
-    .run(term, transcription, definition, strength ?? null, req.params.id)
+  const { term, transcription, definition, strength, frequency } = req.body
+  db.prepare('UPDATE words SET term = ?, transcription = ?, definition = ?, strength = COALESCE(?, strength), frequency = COALESCE(?, frequency) WHERE id = ?')
+    .run(term, transcription, definition, strength ?? null, frequency ?? null, req.params.id)
   res.json({ ok: true })
 })
 
@@ -108,7 +146,37 @@ app.delete('/api/sentences/:id', (req, res) => {
   res.json({ ok: true })
 })
 
-const port = process.env.PORT || 5174
+// Custom Phrases
+app.get('/api/custom-phrases', (req, res) => {
+  const rows = db.prepare('SELECT id, phrase, created_at as createdAt FROM custom_phrases ORDER BY created_at ASC').all()
+  res.json(rows)
+})
+
+app.post('/api/custom-phrases', (req, res) => {
+  const { id, phrase, createdAt } = req.body
+  try {
+    db.prepare('INSERT INTO custom_phrases (id, phrase, created_at) VALUES (?, ?, ?)').run(id, phrase, createdAt)
+    res.status(201).json({ ok: true })
+  } catch (error) {
+    if (error.code === 'SQLITE_CONSTRAINT_UNIQUE') {
+      res.status(409).json({ error: 'Phrase already exists' })
+    } else {
+      res.status(500).json({ error: 'Failed to add phrase' })
+    }
+  }
+})
+
+app.delete('/api/custom-phrases/:id', (req, res) => {
+  db.prepare('DELETE FROM custom_phrases WHERE id = ?').run(req.params.id)
+  res.json({ ok: true })
+})
+
+app.delete('/api/custom-phrases', (req, res) => {
+  db.prepare('DELETE FROM custom_phrases').run()
+  res.json({ ok: true })
+})
+
+const port = process.env.PORT || 5175
 app.listen(port, () => console.log(`API listening on http://localhost:${port}`))
 
 

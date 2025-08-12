@@ -1,7 +1,7 @@
-const API_BASE = import.meta.env.VITE_API_BASE || 'http://localhost:5174/api'
+const API_BASE = import.meta.env.VITE_API_BASE || 'http://localhost:5175/api'
 
 export type WordList = { id: string; name: string; wordsCount: number }
-export type Word = { id: string; term: string; transcription: string | null; definition: string | null; strength: number; createdAt: number }
+export type Word = { id: string; term: string; transcription: string | null; definition: string | null; strength: number; frequency: number; createdAt: number }
 export type Sentence = { id: string; wordId: string; text: string; createdAt: number }
 
 export async function fetchLists(): Promise<WordList[]> {
@@ -36,6 +36,7 @@ export async function fetchWords(listId: string): Promise<Word[]> {
     transcription: row.transcription ?? null,
     definition: row.definition ?? null,
     strength: Number(row.strength ?? 0),
+    frequency: Number(row.frequency ?? 50),
     createdAt: Number(row.createdAt),
   }))
 }
@@ -45,11 +46,12 @@ export async function addWord(
   term: string,
   transcription: string | null,
   definition: string | null,
+  frequency: number = 50,
 ): Promise<Word> {
   const id = crypto.randomUUID()
   const createdAt = Date.now()
-  await fetch(`${API_BASE}/lists/${listId}/words`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ id, term, transcription, definition, strength: 0, createdAt }) })
-  return { id, term, transcription, definition, strength: 0, createdAt }
+  await fetch(`${API_BASE}/lists/${listId}/words`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ id, term, transcription, definition, strength: 0, frequency, createdAt }) })
+  return { id, term, transcription, definition, strength: 0, frequency, createdAt }
 }
 
 export async function updateWord(
@@ -57,8 +59,9 @@ export async function updateWord(
   term: string,
   transcription: string | null,
   definition: string | null,
+  frequency?: number,
 ): Promise<void> {
-  await fetch(`${API_BASE}/words/${id}`, { method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ term, transcription, definition }) })
+  await fetch(`${API_BASE}/words/${id}`, { method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ term, transcription, definition, frequency }) })
 }
 
 export async function deleteWord(id: string): Promise<void> {
@@ -84,6 +87,41 @@ export async function updateSentence(id: string, text: string): Promise<void> {
 
 export async function deleteSentence(id: string): Promise<void> {
   await fetch(`${API_BASE}/sentences/${id}`, { method: 'DELETE' })
+}
+
+// Custom Phrases
+export async function fetchCustomPhrases(): Promise<{ id: string; phrase: string; createdAt: number }[]> {
+  const res = await fetch(`${API_BASE}/custom-phrases`)
+  if (!res.ok) throw new Error('Failed to fetch custom phrases')
+  return await res.json()
+}
+
+export async function addCustomPhrase(phrase: string): Promise<void> {
+  const id = crypto.randomUUID()
+  const createdAt = Date.now()
+  const res = await fetch(`${API_BASE}/custom-phrases`, { 
+    method: 'POST', 
+    headers: { 'Content-Type': 'application/json' }, 
+    body: JSON.stringify({ id, phrase, createdAt }) 
+  })
+  if (!res.ok) {
+    const error = await res.json()
+    throw new Error(error.error || 'Failed to add custom phrase')
+  }
+}
+
+export async function deleteCustomPhrase(id: string): Promise<void> {
+  await fetch(`${API_BASE}/custom-phrases/${id}`, { method: 'DELETE' })
+}
+
+export async function clearAllCustomPhrases(): Promise<void> {
+  await fetch(`${API_BASE}/custom-phrases`, { method: 'DELETE' })
+}
+
+// Helper: get only phrases (strings)
+export async function getAllCustomPhraseStrings(): Promise<string[]> {
+  const rows = await fetchCustomPhrases()
+  return rows.map((r) => r.phrase)
 }
 
 

@@ -56,7 +56,11 @@ function App() {
 
   return (
     <div className="page">
-      <PageHeader title="Wordbook" primaryAction={{ label: 'Create New List +', onClick: handleCreateList }} />
+      <PageHeader 
+        title="Wordbook" 
+        primaryAction={{ label: 'Create New List +', onClick: handleCreateList }}
+        showSettings={true}
+      />
 
       {lists.length === 0 ? (
         <EmptyState message="No word lists yet." action={{ label: 'Create New List +', onClick: handleCreateList }} />
