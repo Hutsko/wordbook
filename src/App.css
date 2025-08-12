@@ -11,6 +11,11 @@
   display: flex;
   flex-direction: column;
   height: 100%;
+  overflow: hidden; /* Prevent page-level scrolling */
+}
+
+.page.scrollable {
+  overflow: auto;
 }
 
 .header {
@@ -19,6 +24,8 @@
   justify-content: space-between;
   gap: 1rem;
   padding: 1rem 1.25rem;
+  background: #242424;
+  border-bottom: 1px solid #2a2a2a;
 }
 
 .title {
@@ -67,21 +74,51 @@
   background: #141414;
   box-sizing: border-box;
   cursor: pointer;
+  transition: all 0.2s ease;
+  position: relative;
+  overflow: hidden;
+}
+
+.tile:hover {
+  border-color: #646cff;
+  background: #1a1a1a;
+  transform: translateY(-2px);
+  box-shadow: 0 4px 12px rgba(100, 108, 255, 0.15);
+}
+
+.tile:active {
+  transform: translateY(0);
+  box-shadow: 0 2px 8px rgba(100, 108, 255, 0.1);
 }
 
 .tile .btn {
   cursor: default;
+  transition: all 0.2s ease;
+}
+
+.tile:hover .btn {
+  transform: scale(1.02);
 }
 
 .tile-title {
   margin: 0 0 0.25rem;
   font-size: 1.1rem;
+  transition: color 0.2s ease;
+}
+
+.tile:hover .tile-title {
+  color: #646cff;
 }
 
 .tile-meta {
   margin: 0;
   color: #9aa0a6;
   font-size: 0.9rem;
+  transition: color 0.2s ease;
+}
+
+.tile:hover .tile-meta {
+  color: #b0b7c1;
 }
 
 .tile-actions {

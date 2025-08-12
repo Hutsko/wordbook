@@ -21,9 +21,7 @@ export default function ListPage() {
   
   // Modal states
   const [isAddModalOpen, setIsAddModalOpen] = useState(false)
-  const [isEditModalOpen, setIsEditModalOpen] = useState(false)
   const [isMoveModalOpen, setIsMoveModalOpen] = useState(false)
-  const [editingWord, setEditingWord] = useState<Word | null>(null)
   
   // Tab state
   const [activeTab, setActiveTab] = useState<'list' | 'progress'>('list')
@@ -74,7 +72,6 @@ export default function ListPage() {
       if (e.key === 'Escape') {
         setSelectedWord(null)
         setIsAddModalOpen(false)
-        setIsEditModalOpen(false)
         setIsMoveModalOpen(false)
       }
     }
@@ -144,10 +141,7 @@ export default function ListPage() {
     }
   }
 
-  const handleWordEdit = (word: Word) => {
-    setEditingWord(word)
-    setIsEditModalOpen(true)
-  }
+
 
   const handleWordDelete = async (word: Word) => {
     const confirmed = window.confirm(`Delete "${word.term}"?`)
@@ -293,70 +287,78 @@ export default function ListPage() {
         </div>
       </header>
 
-      {/* Tab Navigation */}
-      <div style={{ padding: '0 1.25rem' }}>
-        <div style={{ display: 'flex', gap: '0.5rem', marginBottom: '0.75rem' }}>
-          <button 
-            className="btn" 
-            onClick={() => setActiveTab('list')} 
-            style={{ borderColor: activeTab === 'list' ? '#646cff' : undefined }}
-          >
-            Word list
-          </button>
-          <button 
-            className="btn" 
-            onClick={() => setActiveTab('progress')} 
-            style={{ borderColor: activeTab === 'progress' ? '#646cff' : undefined }}
-          >
-            Learning progress
-          </button>
-        </div>
-      </div>
-
       {/* Main Content */}
       {activeTab === 'list' ? (
         <div
           ref={containerRef}
           style={{
-            display: 'grid',
-            gridTemplateColumns: selectedWord ? `${panelWidth}px 6px 1fr` : '1fr',
+            display: 'flex',
+            flexDirection: 'column',
+            height: '100%',
+            overflow: 'hidden', /* Prevent main container from scrolling */
           }}
         >
-          {/* Word Details Panel */}
-          {selectedWord && (
-            <WordDetailsPanel
-              selectedWord={selectedWord}
-              onWordUpdate={handleWordUpdate}
-              onClose={() => setSelectedWord(null)}
-              panelWidth={panelWidth}
-              onResizeStart={startResize}
-            />
-          )}
-
-          {/* Main Content Area */}
-          <div style={{ padding: '0 1.25rem' }}>
-            <div style={{ marginBottom: '0.5rem', color: '#9aa0a6' }}>
-              {words.length} words
+          {/* Tab Navigation - Fixed */}
+          <div style={{ padding: '0 1.25rem', flexShrink: 0, background: '#242424', borderBottom: '1px solid #2a2a2a' }}>
+            <div style={{ display: 'flex', gap: '0.5rem', marginBottom: '0.75rem' }}>
+              <button 
+                className="btn" 
+                onClick={() => setActiveTab('list' as const)} 
+                style={{ borderColor: activeTab === 'list' ? '#646cff' : undefined }}
+              >
+                Word list
+              </button>
+              <button 
+                className="btn" 
+                onClick={() => setActiveTab('progress' as const)} 
+                style={{ borderColor: activeTab === 'progress' ? '#646cff' : undefined }}
+              >
+                Learning progress
+              </button>
             </div>
-            
-            {/* Bulk Actions Bar */}
-            <BulkActionsBar
-              selectedCount={selectedWords.size}
-              onBulkDelete={handleBulkDelete}
-              onBulkMove={handleBulkMove}
-            />
+          </div>
 
-            {/* Word Table */}
-            <WordTable
-              words={words}
-              selectedWords={selectedWords}
-              selectedWord={selectedWord}
-              onWordSelect={handleWordSelect}
-              onWordSelectToggle={handleWordSelectToggle}
-              onSelectAll={handleSelectAll}
-              onEditWord={handleWordEdit}
-              onDeleteWord={handleWordDelete}
-            />
+          {/* Scrollable Content Area */}
+          <div style={{ display: 'flex', flex: 1, overflow: 'hidden' }}>
+            {/* Word Details Panel */}
+            {selectedWord && (
+              <WordDetailsPanel
+                selectedWord={selectedWord}
+                onWordUpdate={handleWordUpdate}
+                onClose={() => setSelectedWord(null)}
+                panelWidth={panelWidth}
+                onResizeStart={startResize}
+              />
+            )}
+
+            {/* Main Content Area */}
+            <div style={{ padding: '0 1.25rem', flex: 1, display: 'flex', flexDirection: 'column' }}>
+              <div style={{ marginBottom: '0.5rem', color: '#9aa0a6', flexShrink: 0 }}>
+                {words.length} words
+              </div>
+              
+              {/* Bulk Actions Bar */}
+              <div style={{ flexShrink: 0 }}>
+                <BulkActionsBar
+                  selectedCount={selectedWords.size}
+                  onBulkDelete={handleBulkDelete}
+                  onBulkMove={handleBulkMove}
+                />
+              </div>
+
+              {/* Word Table Container - Only this scrolls */}
+              <div style={{ flex: 1, overflow: 'auto', minHeight: 0 }}>
+                <WordTable
+                  words={words}
+                  selectedWords={selectedWords}
+                  selectedWord={selectedWord}
+                  onWordSelect={handleWordSelect}
+                  onWordSelectToggle={handleWordSelectToggle}
+                  onSelectAll={handleSelectAll}
+                  onDeleteWord={handleWordDelete}
+                />
+              </div>
+            </div>
           </div>
         </div>
       ) : (

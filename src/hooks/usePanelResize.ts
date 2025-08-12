@@ -20,6 +20,11 @@ export function usePanelResize({ initialWidth, minWidth, maxWidth }: UsePanelRes
 
     function onUp() {
       setIsResizing(false)
+      // Restore text selection
+      document.body.style.userSelect = ''
+      document.body.style.webkitUserSelect = ''
+      document.body.style.mozUserSelect = ''
+      document.body.style.msUserSelect = ''
       window.removeEventListener('mousemove', onMove)
       window.removeEventListener('mouseup', onUp)
     }
@@ -34,7 +39,14 @@ export function usePanelResize({ initialWidth, minWidth, maxWidth }: UsePanelRes
     }
   }, [isResizing, minWidth, maxWidth])
 
-  const startResize = () => setIsResizing(true)
+  const startResize = () => {
+    setIsResizing(true)
+    // Prevent text selection during resize
+    document.body.style.userSelect = 'none'
+    document.body.style.webkitUserSelect = 'none'
+    document.body.style.mozUserSelect = 'none'
+    document.body.style.msUserSelect = 'none'
+  }
 
   return {
     panelWidth,

@@ -20,6 +20,8 @@ export default function WordDetailsPanel({
   const [sentences, setSentences] = useState<Sentence[]>([])
   const [isLoadingSentences, setIsLoadingSentences] = useState(false)
   const [frequencyInfo, setFrequencyInfo] = useState<{ category: string; description: string } | null>(null)
+  const [editingSentenceIndex, setEditingSentenceIndex] = useState<number | null>(null)
+  const [editingText, setEditingText] = useState('')
 
   // Load sentences when word is selected
   useEffect(() => {
@@ -85,36 +87,96 @@ export default function WordDetailsPanel({
         console.error('Failed to update sentence:', error)
       }
     } else {
+      // Adding a new sentence - append to the end
       try {
         const newSentence = await addSentence(selectedWord!.id, text)
-        setSentences(prev => prev.map((s, i) => i === index ? newSentence : s))
+        setSentences(prev => [...prev, newSentence])
       } catch (error) {
         console.error('Failed to add sentence:', error)
       }
     }
   }
 
+  // Start editing a sentence
+  const startEditing = (index: number, text: string) => {
+    setEditingSentenceIndex(index)
+    setEditingText(text)
+  }
+
+  // Save edited sentence
+  const saveEdit = async () => {
+    if (editingSentenceIndex === null) return
+    
+    await handleSentenceUpdate(editingSentenceIndex, editingText.trim())
+    setEditingSentenceIndex(null)
+    setEditingText('')
+    
+    // Reset text color to white for the sentence that was being edited
+    const sentenceElement = document.querySelector(`[data-sentence-index="${editingSentenceIndex}"]`) as HTMLElement
+    if (sentenceElement) {
+      sentenceElement.style.color = 'white'
+    }
+  }
+
+  // Delete a sentence
+  const deleteSentenceHandler = async (index: number) => {
+    const sentence = sentences[index]
+    if (sentence?.id) {
+      try {
+        await deleteSentence(sentence.id)
+        setSentences(prev => prev.filter((_, i) => i !== index))
+      } catch (error) {
+        console.error('Failed to delete sentence:', error)
+      }
+    }
+  }
+
+  // Discard edit
+  const discardEdit = () => {
+    setEditingSentenceIndex(null)
+    setEditingText('')
+    
+    // Reset text color to white for the sentence that was being edited
+    const sentenceElement = document.querySelector(`[data-sentence-index="${editingSentenceIndex}"]`) as HTMLElement
+    if (sentenceElement) {
+      sentenceElement.style.color = 'white'
+    }
+  }
+
   if (!selectedWord) return null
 
   return (
-    <>
+    <div style={{ display: 'flex', height: '100%' }}>
       <aside style={{ 
         borderRight: '1px solid #2a2a2a', 
-        padding: '0 1.25rem', 
-        overflow: 'auto',
         width: panelWidth,
-        position: 'relative'
+        flexShrink: 0,
+        display: 'flex',
+        flexDirection: 'column',
+        height: '100%'
       }}>
-        <div style={{ padding: '0.75rem 0' }}>
+        {/* Fixed Header */}
+        <div style={{ 
+          padding: '0.75rem 1.25rem 0.5rem 1.25rem',
+          borderBottom: '1px solid #2a2a2a',
+          flexShrink: 0
+        }}>
           <div style={{ 
             display: 'flex', 
             justifyContent: 'space-between', 
-            alignItems: 'center', 
-            marginBottom: '0.5rem' 
+            alignItems: 'center' 
           }}>
             <strong>Details</strong>
             <button className="btn" onClick={onClose}>✕</button>
           </div>
+        </div>
+
+        {/* Scrollable Content */}
+        <div style={{ 
+          padding: '1rem 1.25rem 2rem 1.25rem',
+          overflowY: 'auto',
+          flex: 1
+        }}>
 
           {/* Word Form */}
           <div style={{ display: 'grid', gap: '0.75rem' }}>
@@ -132,7 +194,8 @@ export default function WordDetailsPanel({
                   borderRadius: 8, 
                   border: '1px solid #3a3a3a', 
                   background: '#1a1a1a', 
-                  color: 'inherit' 
+                  color: 'inherit',
+                  fontFamily: 'system-ui, Avenir, Helvetica, Arial, sans-serif'
                 }}
               />
             </label>
@@ -151,7 +214,8 @@ export default function WordDetailsPanel({
                   borderRadius: 8, 
                   border: '1px solid #3a3a3a', 
                   background: '#1a1a1a', 
-                  color: 'inherit' 
+                  color: 'inherit',
+                  fontFamily: 'system-ui, Avenir, Helvetica, Arial, sans-serif'
                 }}
               />
             </label>
@@ -172,7 +236,8 @@ export default function WordDetailsPanel({
                   border: '1px solid #3a3a3a', 
                   background: '#1a1a1a', 
                   color: 'inherit', 
-                  resize: 'vertical' 
+                  resize: 'vertical',
+                  fontFamily: 'system-ui, Avenir, Helvetica, Arial, sans-serif'
                 }}
               />
             </label>
@@ -220,46 +285,180 @@ export default function WordDetailsPanel({
               {isLoadingSentences && <span style={{ color: '#9aa0a6', fontWeight: 'normal' }}> - Loading...</span>}
             </div>
             <div style={{ display: 'grid', gap: '0.5rem' }}>
-              {Array.from({ length: 10 }).map((_, idx) => {
-                const sentence = sentences[idx]
+              {sentences.map((sentence, idx) => {
+                const isEditing = editingSentenceIndex === idx
+                
                 return (
                   <div key={idx} style={{ display: 'flex', gap: '0.5rem', alignItems: 'flex-start' }}>
                     <span style={{ color: '#9aa0a6', width: 18, marginTop: '0.5rem' }}>{idx + 1}.</span>
+                    
+                    {isEditing ? (
+                      <div style={{ flex: 1, display: 'grid', gap: '0.5rem' }}>
+                        <textarea
+                          value={editingText}
+                          onChange={(e) => setEditingText(e.target.value)}
+                          rows={3}
+                          placeholder="Type a sentence"
+                          style={{ 
+                            padding: '0.5rem 0.6rem', 
+                            borderRadius: 8, 
+                            border: '1px solid #3a3a3a', 
+                            background: '#1a1a1a', 
+                            color: 'white', 
+                            resize: 'vertical',
+                            fontFamily: 'system-ui, Avenir, Helvetica, Arial, sans-serif'
+                          }}
+                          autoFocus
+                        />
+                        <div style={{ display: 'flex', gap: '0.5rem', justifyContent: 'flex-end' }}>
+                          <button 
+                            type="button" 
+                            className="btn" 
+                            onClick={discardEdit}
+                            style={{ fontSize: '0.85rem', padding: '0.3rem 0.6rem', color: 'white' }}
+                          >
+                            Discard
+                          </button>
+                          <button 
+                            type="button" 
+                            className="create-btn" 
+                            onClick={saveEdit}
+                            style={{ fontSize: '0.85rem', padding: '0.3rem 0.6rem', color: 'white' }}
+                          >
+                            Save
+                          </button>
+                        </div>
+                      </div>
+                    ) : (
+                      <div 
+                        data-sentence-index={idx}
+                        style={{ 
+                          flex: 1, 
+                          padding: '0.5rem 0', 
+                          cursor: 'pointer',
+                          borderRadius: 4,
+                          transition: 'color 0.2s ease',
+                          fontFamily: 'system-ui, Avenir, Helvetica, Arial, sans-serif',
+                          position: 'relative'
+                        }}
+                        onMouseEnter={(e) => {
+                          e.currentTarget.style.color = '#9aa0a6'
+                          // Show delete button on hover
+                          const deleteBtn = e.currentTarget.querySelector('.delete-btn') as HTMLElement
+                          if (deleteBtn) deleteBtn.style.opacity = '1'
+                        }}
+                        onMouseLeave={(e) => {
+                          e.currentTarget.style.color = 'white'
+                          // Hide delete button on leave
+                          const deleteBtn = e.currentTarget.querySelector('.delete-btn') as HTMLElement
+                          if (deleteBtn) deleteBtn.style.opacity = '0'
+                        }}
+                        onClick={() => startEditing(idx, sentence.text)}
+                      >
+                        {sentence.text}
+                        <button
+                          type="button"
+                          className="delete-btn"
+                          onClick={(e) => {
+                            e.stopPropagation()
+                            deleteSentenceHandler(idx)
+                          }}
+                          style={{
+                            position: 'absolute',
+                            right: '0.5rem',
+                            top: '50%',
+                            transform: 'translateY(-50%)',
+                            background: '#dc3545',
+                            color: 'white',
+                            border: 'none',
+                            borderRadius: '4px',
+                            padding: '0.2rem 0.4rem',
+                            fontSize: '0.75rem',
+                            cursor: 'pointer',
+                            opacity: 0,
+                            transition: 'opacity 0.2s ease',
+                            zIndex: 10
+                          }}
+                        >
+                          ✕
+                        </button>
+                      </div>
+                    )}
+                  </div>
+                )
+              })}
+              
+              {/* Add new sentence button */}
+              {editingSentenceIndex === sentences.length ? (
+                <div style={{ display: 'flex', gap: '0.5rem', alignItems: 'flex-start' }}>
+                  <span style={{ color: '#9aa0a6', width: 18, marginTop: '0.5rem' }}>
+                    {sentences.length + 1}.
+                  </span>
+                  <div style={{ flex: 1, display: 'grid', gap: '0.5rem' }}>
                     <textarea
-                      value={sentence?.text ?? ''}
-                      placeholder="Type a sentence"
+                      value={editingText}
+                      onChange={(e) => setEditingText(e.target.value)}
                       rows={3}
-                      onChange={(e) => {
-                        const text = e.target.value
-                        setSentences(prev => {
-                          const next = [...prev]
-                          if (sentence) {
-                            next[idx] = { ...sentence, text }
-                          } else {
-                            next[idx] = { 
-                              id: '', 
-                              wordId: selectedWord.id, 
-                              text, 
-                              createdAt: Date.now() 
-                            }
-                          }
-                          return next
-                        })
-                      }}
-                      onBlur={(e) => handleSentenceUpdate(idx, e.target.value.trim())}
+                      placeholder="Type a sentence"
                       style={{ 
-                        flex: 1, 
                         padding: '0.5rem 0.6rem', 
                         borderRadius: 8, 
                         border: '1px solid #3a3a3a', 
                         background: '#1a1a1a', 
-                        color: 'inherit', 
-                        resize: 'vertical' 
+                        color: 'white', 
+                        resize: 'vertical',
+                        fontFamily: 'system-ui, Avenir, Helvetica, Arial, sans-serif'
                       }}
+                      autoFocus
                     />
+                    <div style={{ display: 'flex', gap: '0.5rem', justifyContent: 'flex-end' }}>
+                      <button 
+                        type="button" 
+                        className="btn" 
+                        onClick={discardEdit}
+                        style={{ fontSize: '0.85rem', padding: '0.3rem 0.6rem', color: 'white' }}
+                      >
+                        Discard
+                      </button>
+                      <button 
+                        type="button" 
+                        className="create-btn" 
+                        onClick={saveEdit}
+                        style={{ fontSize: '0.85rem', padding: '0.3rem 0.6rem', color: 'white' }}
+                      >
+                        Save
+                      </button>
+                    </div>
                   </div>
-                )
-              })}
+                </div>
+              ) : (
+                <div style={{ display: 'flex', gap: '0.5rem', alignItems: 'flex-start' }}>
+                  <span style={{ color: '#9aa0a6', width: 18, marginTop: '0.5rem' }}>
+                    {sentences.length + 1}.
+                  </span>
+                  <div 
+                    style={{ 
+                      flex: 1, 
+                      padding: '0.5rem 0', 
+                      cursor: 'pointer',
+                      borderRadius: 4,
+                      transition: 'color 0.2s ease',
+                      color: '#9aa0a6',
+                      fontStyle: 'italic',
+                      fontFamily: 'system-ui, Avenir, Helvetica, Arial, sans-serif'
+                    }}
+                    onMouseEnter={(e) => {
+                      e.currentTarget.style.color = '#6c757d'
+                    }}
+                    onMouseLeave={(e) => {
+                      e.currentTarget.style.color = '#9aa0a6'
+                    }}
+                    onClick={() => startEditing(sentences.length, '')}
+                  >
+                    Click to add a sentence
+                  </div>
+                </div>
+              )}
             </div>
           </div>
         </div>
@@ -272,10 +471,19 @@ export default function WordDetailsPanel({
           cursor: 'col-resize', 
           background: '#2a2a2a', 
           width: 6,
-          position: 'relative',
-          zIndex: 10
+          flexShrink: 0,
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'center'
         }}
-      />
-    </>
+      >
+        <div style={{
+          width: 2,
+          height: 40,
+          background: '#4a4a4a',
+          borderRadius: 1
+        }} />
+      </div>
+    </div>
   )
 }

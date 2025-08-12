@@ -1,4 +1,4 @@
-import { useRef, useState } from 'react'
+import { useRef, useState, useEffect } from 'react'
 import { addWord, addSentence, fetchCustomPhrases, type Word } from '../db'
 import { autocompleteFromSentence, generateSentencesForWord } from '../ai/gemini'
 import { filterWatermark } from '../utils/textFilter'
@@ -31,21 +31,23 @@ export default function AddWordModal({
   const transcriptionRef = useRef<HTMLInputElement | null>(null)
   const definitionRef = useRef<HTMLTextAreaElement | null>(null)
 
-  // Load custom phrases once when modal opens
-  const loadCustomPhrases = async () => {
-    try {
-      const phrases = await fetchCustomPhrases()
-      setCustomPhrases(phrases.map(p => p.phrase))
-    } catch (error) {
-      console.error('Failed to load custom phrases:', error)
-      setCustomPhrases([])
+  // Load custom phrases when modal opens
+  useEffect(() => {
+    if (isOpen) {
+      const loadCustomPhrases = async () => {
+        try {
+          const phrases = await fetchCustomPhrases()
+          const phraseStrings = phrases.map(p => p.phrase)
+          console.log('Loaded custom phrases in modal:', phraseStrings)
+          setCustomPhrases(phraseStrings)
+        } catch (error) {
+          console.error('Failed to load custom phrases:', error)
+          setCustomPhrases([])
+        }
+      }
+      loadCustomPhrases()
     }
-  }
-
-  // Load phrases when modal opens
-  if (isOpen && customPhrases.length === 0) {
-    loadCustomPhrases()
-  }
+  }, [isOpen])
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
@@ -115,7 +117,19 @@ export default function AddWordModal({
   }
 
   const handleTextChange = (e: React.ChangeEvent<HTMLTextAreaElement>) => {
-    const filteredValue = filterWatermark(e.target.value, customPhrases)
+    const originalValue = e.target.value
+    console.log('Text change - custom phrases available:', customPhrases)
+    const filteredValue = filterWatermark(originalValue, customPhrases)
+    
+    // Debug logging to verify filtering is working
+    if (originalValue !== filteredValue) {
+      console.log('Watermark filtering applied on text change:', {
+        original: originalValue,
+        filtered: filteredValue,
+        customPhrases: customPhrases
+      })
+    }
+    
     setWordText(filteredValue)
   }
 
@@ -143,13 +157,35 @@ export default function AddWordModal({
   const handlePaste = (e: React.ClipboardEvent) => {
     e.preventDefault()
     const pastedText = e.clipboardData.getData('text')
+    console.log('Paste event - custom phrases available:', customPhrases)
     const filteredText = filterWatermark(pastedText, customPhrases)
-    const target = e.target as HTMLTextAreaElement
+    
+    // Debug logging to verify filtering is working
+    if (pastedText !== filteredText) {
+      console.log('Watermark filtering applied:', {
+        original: pastedText,
+        filtered: filteredText,
+        customPhrases: customPhrases
+      })
+    }
+    
+    const target = e.target as HTMLTextAreaElement | HTMLInputElement
     const start = target.selectionStart ?? 0
     const end = target.selectionEnd ?? 0
     
-    const newText = wordText.slice(0, start) + filteredText + wordText.slice(end)
-    setWordText(newText)
+    // Handle different input types
+    if (target === termRef.current) {
+      const newText = wordText.slice(0, start) + filteredText + wordText.slice(end)
+      setWordText(newText)
+    } else if (target === transcriptionRef.current) {
+      const currentValue = target.value
+      const newText = currentValue.slice(0, start) + filteredText + currentValue.slice(end)
+      target.value = newText
+    } else if (target === definitionRef.current) {
+      const currentValue = target.value
+      const newText = currentValue.slice(0, start) + filteredText + currentValue.slice(end)
+      target.value = newText
+    }
     
     // Set cursor position after the pasted text
     setTimeout(() => {
@@ -203,20 +239,24 @@ export default function AddWordModal({
         position: 'fixed',
         inset: 0,
         background: 'rgba(0,0,0,0.5)',
-        display: 'grid',
-        placeItems: 'center',
+        display: 'flex',
+        alignItems: 'center',
+        justifyContent: 'center',
         padding: '1rem',
         zIndex: 1000,
+        overflow: 'auto',
       }}
       onClick={handleClose}
     >
       <div
         style={{
           width: 'min(560px, 96vw)',
+          maxHeight: 'calc(100vh - 2rem)',
           background: '#121212',
           border: '1px solid #2a2a2a',
           borderRadius: 12,
           padding: '1rem',
+          overflow: 'auto',
         }}
         onClick={(e) => e.stopPropagation()}
       >
@@ -360,6 +400,7 @@ export default function AddWordModal({
             <input
               ref={transcriptionRef}
               placeholder="/trænˈskrɪpʃən/"
+              onPaste={handlePaste}
               style={{
                 padding: '0.6rem 0.75rem',
                 borderRadius: 8,
@@ -376,6 +417,7 @@ export default function AddWordModal({
                 ref={definitionRef}
                 rows={4}
                 placeholder="enter definition"
+                onPaste={handlePaste}
                 style={{
                   padding: '0.6rem 0.75rem',
                   borderRadius: 8,

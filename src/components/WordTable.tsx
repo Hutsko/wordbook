@@ -7,7 +7,6 @@ interface WordTableProps {
   onWordSelect: (word: Word) => void
   onWordSelectToggle: (wordId: string) => void
   onSelectAll: () => void
-  onEditWord: (word: Word) => void
   onDeleteWord: (word: Word) => void
 }
 
@@ -18,7 +17,6 @@ export default function WordTable({
   onWordSelect,
   onWordSelectToggle,
   onSelectAll,
-  onEditWord,
   onDeleteWord
 }: WordTableProps) {
   if (words.length === 0) {
@@ -31,7 +29,7 @@ export default function WordTable({
 
   return (
     <div style={{ overflowX: 'auto' }}>
-      <table style={{ width: '100%', borderCollapse: 'collapse' }}>
+      <table style={{ width: '100%', borderCollapse: 'collapse', marginBottom: '16rem' }}>
         <thead>
           <tr>
             <th style={{ textAlign: 'left', padding: '0.5rem', width: '50px' }}>
@@ -129,21 +127,11 @@ export default function WordTable({
               </td>
               <td style={{ padding: '0.5rem', textAlign: 'right', whiteSpace: 'nowrap' }}>
                 <button
-                  className="btn"
-                  onClick={(e) => {
-                    e.stopPropagation()
-                    onEditWord(word)
-                  }}
-                >
-                  Edit
-                </button>
-                <button
                   className="btn danger"
                   onClick={(e) => {
                     e.stopPropagation()
                     onDeleteWord(word)
                   }}
-                  style={{ marginLeft: '0.5rem' }}
                 >
                   Delete
                 </button>

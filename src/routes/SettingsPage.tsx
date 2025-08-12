@@ -88,7 +88,7 @@ export default function SettingsPage() {
   }
 
   return (
-    <div className="page">
+    <div className="page scrollable">
       <header className="header">
         <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem' }}>
           <Link to="/" className="btn" style={{ textDecoration: 'none' }}>
