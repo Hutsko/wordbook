@@ -2,12 +2,14 @@ interface BulkActionsBarProps {
   selectedCount: number
   onBulkDelete: () => void
   onBulkMove: () => void
+  onBulkAddToLearningPlan: () => void
 }
 
 export default function BulkActionsBar({ 
   selectedCount, 
   onBulkDelete, 
-  onBulkMove 
+  onBulkMove,
+  onBulkAddToLearningPlan
 }: BulkActionsBarProps) {
   if (selectedCount === 0) return null
 
@@ -36,6 +38,13 @@ export default function BulkActionsBar({
         onClick={onBulkMove}
       >
         Move to List
+      </button>
+      <button 
+        className="btn" 
+        onClick={onBulkAddToLearningPlan}
+        style={{ background: '#2d5a2d', borderColor: '#4caf50' }}
+      >
+        📚 Add to Learning Plan
       </button>
     </div>
   )

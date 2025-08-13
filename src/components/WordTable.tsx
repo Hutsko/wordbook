@@ -1,4 +1,8 @@
+import { useState, useMemo } from 'react'
 import { type Word } from '../db'
+
+type SortField = 'frequency' | 'term' | 'strength'
+type SortDirection = 'asc' | 'desc'
 
 interface WordTableProps {
   words: Word[]
@@ -19,6 +23,46 @@ export default function WordTable({
   onSelectAll,
   onDeleteWord
 }: WordTableProps) {
+  const [sortField, setSortField] = useState<SortField>('frequency')
+  const [sortDirection, setSortDirection] = useState<SortDirection>('desc')
+
+  const handleSort = (field: SortField) => {
+    if (sortField === field) {
+      setSortDirection(sortDirection === 'asc' ? 'desc' : 'asc')
+    } else {
+      setSortField(field)
+      setSortDirection('desc')
+    }
+  }
+
+  const sortedWords = useMemo(() => {
+    return [...words].sort((a, b) => {
+      let aValue: number | string
+      let bValue: number | string
+
+      switch (sortField) {
+        case 'frequency':
+          aValue = a.frequency
+          bValue = b.frequency
+          break
+        case 'term':
+          aValue = a.term.toLowerCase()
+          bValue = b.term.toLowerCase()
+          break
+        case 'strength':
+          aValue = a.strength
+          bValue = b.strength
+          break
+        default:
+          return 0
+      }
+
+      if (aValue < bValue) return sortDirection === 'asc' ? -1 : 1
+      if (aValue > bValue) return sortDirection === 'asc' ? 1 : -1
+      return 0
+    })
+  }, [words, sortField, sortDirection])
+
   if (words.length === 0) {
     return (
       <div className="empty">
@@ -45,16 +89,49 @@ export default function WordTable({
                 }}
               />
             </th>
-                              <th style={{ textAlign: 'left', padding: '0.5rem' }}>Word</th>
-                  <th style={{ textAlign: 'left', padding: '0.5rem' }}>Transcription</th>
-                  <th style={{ textAlign: 'left', padding: '0.5rem' }}>Definition</th>
-                  <th style={{ textAlign: 'left', padding: '0.5rem' }}>Strength</th>
-                  <th style={{ textAlign: 'left', padding: '0.5rem' }}>Frequency</th>
-                  <th style={{ textAlign: 'right', padding: '0.5rem' }}></th>
+            <th 
+              style={{ 
+                textAlign: 'left', 
+                padding: '0.5rem',
+                cursor: 'pointer',
+                userSelect: 'none',
+                color: sortField === 'term' ? '#646cff' : undefined
+              }}
+              onClick={() => handleSort('term')}
+            >
+              Word {sortField === 'term' && (sortDirection === 'asc' ? '↑' : '↓')}
+            </th>
+            <th style={{ textAlign: 'left', padding: '0.5rem' }}>Transcription</th>
+            <th style={{ textAlign: 'left', padding: '0.5rem' }}>Definition</th>
+            <th 
+              style={{ 
+                textAlign: 'left', 
+                padding: '0.5rem',
+                cursor: 'pointer',
+                userSelect: 'none',
+                color: sortField === 'strength' ? '#646cff' : undefined
+              }}
+              onClick={() => handleSort('strength')}
+            >
+              Strength {sortField === 'strength' && (sortDirection === 'asc' ? '↑' : '↓')}
+            </th>
+            <th 
+              style={{ 
+                textAlign: 'left', 
+                padding: '0.5rem',
+                cursor: 'pointer',
+                userSelect: 'none',
+                color: sortField === 'frequency' ? '#646cff' : undefined
+              }}
+              onClick={() => handleSort('frequency')}
+            >
+              Frequency {sortField === 'frequency' && (sortDirection === 'asc' ? '↑' : '↓')}
+            </th>
+            <th style={{ textAlign: 'right', padding: '0.5rem' }}></th>
           </tr>
         </thead>
         <tbody>
-          {words.map((word) => (
+          {sortedWords.map((word) => (
             <tr
               key={word.id}
               style={{

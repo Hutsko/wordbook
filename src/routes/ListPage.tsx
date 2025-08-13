@@ -22,6 +22,7 @@ export default function ListPage() {
   // Modal states
   const [isAddModalOpen, setIsAddModalOpen] = useState(false)
   const [isMoveModalOpen, setIsMoveModalOpen] = useState(false)
+  const [isLearningPlanModalOpen, setIsLearningPlanModalOpen] = useState(false)
   
   // Tab state
   const [activeTab, setActiveTab] = useState<'list' | 'progress'>('list')
@@ -195,6 +196,11 @@ export default function ListPage() {
     setIsMoveModalOpen(true)
   }
 
+  const handleBulkAddToLearningPlan = () => {
+    if (selectedWords.size === 0) return
+    setIsLearningPlanModalOpen(true)
+  }
+
   const handleMoveToNewList = async (newListName: string) => {
     if (selectedWords.size === 0 || !newListName.trim()) return
     
@@ -287,6 +293,26 @@ export default function ListPage() {
         </div>
       </header>
 
+      {/* Tab Navigation - Fixed */}
+      <div style={{ padding: '0 1.25rem', flexShrink: 0, background: '#242424', borderBottom: '1px solid #2a2a2a' }}>
+        <div style={{ display: 'flex', gap: '0.5rem', marginBottom: '0.75rem' }}>
+          <button 
+            className="btn" 
+            onClick={() => setActiveTab('list' as const)} 
+            style={{ borderColor: activeTab === 'list' ? '#646cff' : undefined }}
+          >
+            Word list
+          </button>
+          <button 
+            className="btn" 
+            onClick={() => setActiveTab('progress' as const)} 
+            style={{ borderColor: activeTab === 'progress' ? '#646cff' : undefined }}
+          >
+            Learning progress
+          </button>
+        </div>
+      </div>
+
       {/* Main Content */}
       {activeTab === 'list' ? (
         <div
@@ -298,26 +324,6 @@ export default function ListPage() {
             overflow: 'hidden', /* Prevent main container from scrolling */
           }}
         >
-          {/* Tab Navigation - Fixed */}
-          <div style={{ padding: '0 1.25rem', flexShrink: 0, background: '#242424', borderBottom: '1px solid #2a2a2a' }}>
-            <div style={{ display: 'flex', gap: '0.5rem', marginBottom: '0.75rem' }}>
-              <button 
-                className="btn" 
-                onClick={() => setActiveTab('list' as const)} 
-                style={{ borderColor: activeTab === 'list' ? '#646cff' : undefined }}
-              >
-                Word list
-              </button>
-              <button 
-                className="btn" 
-                onClick={() => setActiveTab('progress' as const)} 
-                style={{ borderColor: activeTab === 'progress' ? '#646cff' : undefined }}
-              >
-                Learning progress
-              </button>
-            </div>
-          </div>
-
           {/* Scrollable Content Area */}
           <div style={{ display: 'flex', flex: 1, overflow: 'hidden' }}>
             {/* Word Details Panel */}
@@ -343,6 +349,7 @@ export default function ListPage() {
                   selectedCount={selectedWords.size}
                   onBulkDelete={handleBulkDelete}
                   onBulkMove={handleBulkMove}
+                  onBulkAddToLearningPlan={handleBulkAddToLearningPlan}
                 />
               </div>
 
@@ -462,6 +469,111 @@ export default function ListPage() {
                     Create & Move
                   </button>
                 </form>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Learning Plan Modal */}
+      {isLearningPlanModalOpen && (
+        <div
+          role="dialog"
+          aria-modal="true"
+          style={{
+            position: 'fixed',
+            inset: 0,
+            background: 'rgba(0,0,0,0.5)',
+            display: 'grid',
+            placeItems: 'center',
+            padding: '1rem',
+            zIndex: 1000,
+          }}
+          onClick={() => setIsLearningPlanModalOpen(false)}
+        >
+          <div
+            style={{
+              width: 'min(480px, 96vw)',
+              background: '#121212',
+              border: '1px solid #2a2a2a',
+              borderRadius: 12,
+              padding: '1rem',
+            }}
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+              <h2 style={{ margin: 0, fontSize: '1.25rem' }}>
+                📚 Add {selectedWords.size} word{selectedWords.size > 1 ? 's' : ''} to Learning Plan
+              </h2>
+              <button className="btn" onClick={() => setIsLearningPlanModalOpen(false)}>✕</button>
+            </div>
+
+            <div style={{ marginTop: '1rem' }}>
+              <div style={{ 
+                background: '#1a1a1a', 
+                borderRadius: 8, 
+                padding: '1rem', 
+                border: '1px solid #3a3a3a',
+                marginBottom: '1rem'
+              }}>
+                <p style={{ margin: '0 0 0.5rem 0', color: '#9aa0a6' }}>
+                  Selected words will be added to your learning plan for focused study sessions.
+                </p>
+                <div style={{ color: '#9aa0a6', fontSize: '0.9rem' }}>
+                  <strong>Selected words:</strong> {words.filter(w => selectedWords.has(w.id)).map(w => w.term).slice(0, 5).join(', ')}
+                  {selectedWords.size > 5 && ` and ${selectedWords.size - 5} more...`}
+                </div>
+              </div>
+
+              <div style={{ display: 'grid', gap: '0.5rem' }}>
+                <button
+                  className="btn"
+                  onClick={() => {
+                    // TODO: Implement learning plan functionality
+                    alert('Learning plan functionality coming soon!')
+                    setIsLearningPlanModalOpen(false)
+                  }}
+                  style={{ 
+                    background: '#2d5a2d', 
+                    borderColor: '#4caf50',
+                    justifyContent: 'flex-start',
+                    textAlign: 'left'
+                  }}
+                >
+                  📚 Add to Daily Learning Plan
+                </button>
+                <button
+                  className="btn"
+                  onClick={() => {
+                    // TODO: Implement spaced repetition plan
+                    alert('Spaced repetition plan functionality coming soon!')
+                    setIsLearningPlanModalOpen(false)
+                  }}
+                  style={{ 
+                    background: '#2d5a2d', 
+                    borderColor: '#4caf50',
+                    justifyContent: 'flex-start',
+                    textAlign: 'left'
+                  }}
+                >
+                  🔄 Add to Spaced Repetition Plan
+                </button>
+                <button
+                  className="btn"
+                  onClick={() => {
+                    // TODO: Implement custom study session
+                    alert('Custom study session functionality coming soon!')
+                    setIsLearningPlanModalOpen(false)
+                  }}
+                  style={{ 
+                    background: '#2d5a2d', 
+                    borderColor: '#4caf50',
+                    justifyContent: 'flex-start',
+                    textAlign: 'left'
+                  }}
+                >
+                  ⏰ Create Custom Study Session
+                </button>
               </div>
             </div>
           </div>

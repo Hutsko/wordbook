@@ -11,7 +11,7 @@
   display: flex;
   flex-direction: column;
   height: 100%;
-  overflow: hidden; /* Prevent page-level scrolling */
+  overflow: auto; /* Allow page-level scrolling */
 }
 
 .page.scrollable {
@@ -65,6 +65,86 @@
   align-content: flex-start;
 }
 
+/* Horizontal Scrolling */
+.horizontal-scroll {
+  display: flex;
+  gap: 0.5rem;
+  overflow-x: auto;
+  padding: 4px 0;
+  scrollbar-width: thin;
+  scrollbar-color: #3a3a3a #1a1a1a;
+  transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+  min-height: 180px;
+  min-width: 280px;
+}
+
+.horizontal-scroll::-webkit-scrollbar {
+  height: 8px;
+}
+
+.horizontal-scroll::-webkit-scrollbar-track {
+  background: #1a1a1a;
+  border-radius: 4px;
+}
+
+.horizontal-scroll::-webkit-scrollbar-thumb {
+  background: #3a3a3a;
+  border-radius: 4px;
+}
+
+.horizontal-scroll::-webkit-scrollbar-thumb:hover {
+  background: #4a4a4a;
+}
+
+/* Drag and Drop Animations */
+@keyframes shuffleIn {
+  0% {
+    opacity: 0;
+    transform: translateY(10px) scale(0.95);
+  }
+  100% {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+}
+
+@keyframes shuffleOut {
+  0% {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+  100% {
+    opacity: 0;
+    transform: translateY(-10px) scale(0.95);
+  }
+}
+
+.shuffle-animation {
+  animation: shuffleIn 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+/* Drag and Drop Styles */
+.dragging {
+  cursor: grabbing !important;
+}
+
+.drag-over {
+  background: rgba(100, 108, 255, 0.1);
+  border-radius: 8px;
+}
+
+/* Prevent hover effects on all cards when any card is being dragged */
+.dragging-active .tile:hover,
+.dragging-active .tile:hover .tile-title,
+.dragging-active .tile:hover .tile-meta,
+.dragging-active .tile:hover .btn {
+  transform: none !important;
+  border-color: #2a2a2a !important;
+  background: #141414 !important;
+  box-shadow: none !important;
+  color: inherit !important;
+}
+
 .tile {
   width: 280px;
   height: 180px;
@@ -84,6 +164,7 @@
   background: #1a1a1a;
   transform: translateY(-2px);
   box-shadow: 0 4px 12px rgba(100, 108, 255, 0.15);
+  transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
 }
 
 .tile:active {

@@ -12,10 +12,17 @@ const db = new Database(dbPath)
 db.pragma('foreign_keys = ON')
 
 db.exec(`
-CREATE TABLE IF NOT EXISTS lists (
+CREATE TABLE IF NOT EXISTS word_groups (
   id TEXT PRIMARY KEY,
   name TEXT NOT NULL,
   created_at INTEGER NOT NULL
+);
+CREATE TABLE IF NOT EXISTS lists (
+  id TEXT PRIMARY KEY,
+  name TEXT NOT NULL,
+  group_id TEXT,
+  created_at INTEGER NOT NULL,
+  FOREIGN KEY(group_id) REFERENCES word_groups(id) ON DELETE SET NULL
 );
 CREATE TABLE IF NOT EXISTS words (
   id TEXT PRIMARY KEY,
@@ -41,10 +48,37 @@ CREATE TABLE IF NOT EXISTS custom_phrases (
 );
 `)
 
+// Word Groups
+app.get('/api/word-groups', (req, res) => {
+  const rows = db.prepare(`
+    SELECT g.id, g.name, g.created_at as createdAt,
+           (SELECT COUNT(1) FROM lists l WHERE l.group_id = g.id) as listsCount
+    FROM word_groups g ORDER BY g.created_at DESC
+  `).all()
+  res.json(rows)
+})
+
+app.post('/api/word-groups', (req, res) => {
+  const { id, name, createdAt } = req.body
+  db.prepare('INSERT INTO word_groups (id, name, created_at) VALUES (?, ?, ?)').run(id, name, createdAt)
+  res.status(201).json({ ok: true })
+})
+
+app.patch('/api/word-groups/:id', (req, res) => {
+  const { name } = req.body
+  db.prepare('UPDATE word_groups SET name = ? WHERE id = ?').run(name, req.params.id)
+  res.json({ ok: true })
+})
+
+app.delete('/api/word-groups/:id', (req, res) => {
+  db.prepare('DELETE FROM word_groups WHERE id = ?').run(req.params.id)
+  res.json({ ok: true })
+})
+
 // Lists
 app.get('/api/lists', (req, res) => {
   const rows = db.prepare(`
-    SELECT l.id, l.name, l.created_at as createdAt,
+    SELECT l.id, l.name, l.group_id as groupId, l.created_at as createdAt,
            (SELECT COUNT(1) FROM words w WHERE w.list_id = l.id) as wordsCount
     FROM lists l ORDER BY l.created_at DESC
   `).all()
@@ -52,14 +86,20 @@ app.get('/api/lists', (req, res) => {
 })
 
 app.post('/api/lists', (req, res) => {
-  const { id, name, createdAt } = req.body
-  db.prepare('INSERT INTO lists (id, name, created_at) VALUES (?, ?, ?)').run(id, name, createdAt)
+  const { id, name, groupId, createdAt } = req.body
+  db.prepare('INSERT INTO lists (id, name, group_id, created_at) VALUES (?, ?, ?, ?)').run(id, name, groupId || null, createdAt)
   res.status(201).json({ ok: true })
 })
 
 app.patch('/api/lists/:id', (req, res) => {
-  const { name } = req.body
-  db.prepare('UPDATE lists SET name = ? WHERE id = ?').run(name, req.params.id)
+  const { name, groupId } = req.body
+  if (name !== undefined && groupId !== undefined) {
+    db.prepare('UPDATE lists SET name = ?, group_id = ? WHERE id = ?').run(name, groupId, req.params.id)
+  } else if (name !== undefined) {
+    db.prepare('UPDATE lists SET name = ? WHERE id = ?').run(name, req.params.id)
+  } else if (groupId !== undefined) {
+    db.prepare('UPDATE lists SET group_id = ? WHERE id = ?').run(groupId, req.params.id)
+  }
   res.json({ ok: true })
 })
 
