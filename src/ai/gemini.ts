@@ -116,4 +116,56 @@ Return only the sentences, one per line, without numbering or additional text.`
   return sentences
 }
 
+export async function defineWordWithoutContext(params: {
+  term: string
+  language?: string
+}): Promise<AutocompleteResult> {
+  const { term, language = 'en' } = params
+  const genAI = getClient()
+  const model = genAI.getGenerativeModel({ model: 'gemini-1.5-flash' })
+  const prompt = `You are an expert lexicographer. Provide a definition for the word "${term}" without any specific context.
+
+Return JSON only with keys {"transcription","definition"}.
+
+IMPORTANT RULES:
+1. TRANSCRIPTION: Provide IPA in /slashes/ for the BASE FORM of the word
+   - For verbs: use infinitive form (e.g., "running" → /ˈrʌnɪŋ/ but base form is /rʌn/)
+   - For nouns: use singular form (e.g., "books" → /bʊks/ but base form is /bʊk/)
+   - For adjectives: use positive form (e.g., "happier" → /ˈhæpiər/ but base form is /ˈhæpi/)
+
+2. DEFINITION: Create a general definition that captures the word's meaning:
+   - Provide the most common meaning(s) of the word
+   - Keep it concise (max ~20 words) but comprehensive
+   - Use the base form of the word in your definition when possible
+   - Focus on the core meaning rather than contextual usage
+
+Language: ${language}
+Term: "${term}"
+
+Provide a general definition for this word.`
+
+  const generationConfig: GenerationConfig = {
+    responseMimeType: 'application/json',
+    temperature: 0.2,
+  }
+
+  const resp = await model.generateContent({ contents: [{ role: 'user', parts: [{ text: prompt }] }], generationConfig })
+  const text = resp.response.text().trim()
+  try {
+    const parsed = JSON.parse(text)
+    return {
+      transcription: typeof parsed.transcription === 'string' ? parsed.transcription : undefined,
+      definition: typeof parsed.definition === 'string' ? parsed.definition : undefined,
+    }
+  } catch {
+    // Fallback: attempt to parse heuristically
+    const result: AutocompleteResult = {}
+    const transMatch = text.match(/transcription\s*[:=]\s*([/\[][^\n\r]+?[/\]])/i)
+    if (transMatch) result.transcription = transMatch[1]
+    const defMatch = text.match(/definition\s*[:=]\s*([^\n\r]+)/i)
+    if (defMatch) result.definition = defMatch[1].trim()
+    return result
+  }
+}
+
 

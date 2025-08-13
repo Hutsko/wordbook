@@ -1,6 +1,6 @@
 import { useRef, useState, useEffect } from 'react'
 import { addWord, addSentence, fetchCustomPhrases, type Word } from '../db'
-import { autocompleteFromSentence, generateSentencesForWord } from '../ai/gemini'
+import { autocompleteFromSentence, generateSentencesForWord, defineWordWithoutContext } from '../ai/gemini'
 import { filterWatermark } from '../utils/textFilter'
 import { getWordFrequency } from '../services/datamuseApi'
 
@@ -213,19 +213,29 @@ export default function AddWordModal({
   }
 
   const handleAIAutocomplete = async () => {
-    if (!selectedTerm || isGeneratingAI) return
-    const sentence = wordText.trim()
-    if (sentence) {
-      try {
-        setIsGeneratingAI(true)
-        const res = await autocompleteFromSentence({ term: selectedTerm, sentence })
+    if (isGeneratingAI) return
+    
+    const term = selectedTerm || wordText.trim()
+    if (!term) return
+    
+    try {
+      setIsGeneratingAI(true)
+      
+      if (selectedTerm && wordText.trim()) {
+        // If there's a selected term and sentence context, use contextual definition
+        const res = await autocompleteFromSentence({ term: selectedTerm, sentence: wordText.trim() })
         if (res.transcription && transcriptionRef.current) transcriptionRef.current.value = res.transcription
         if (res.definition && definitionRef.current) definitionRef.current.value = res.definition
-      } catch (err) {
-        console.error('AI autocomplete failed', err)
-      } finally {
-        setIsGeneratingAI(false)
+      } else {
+        // If it's just a word/phrase without sentence context, use general definition
+        const res = await defineWordWithoutContext({ term })
+        if (res.transcription && transcriptionRef.current) transcriptionRef.current.value = res.transcription
+        if (res.definition && definitionRef.current) definitionRef.current.value = res.definition
       }
+    } catch (err) {
+      console.error('AI autocomplete failed', err)
+    } finally {
+      setIsGeneratingAI(false)
     }
   }
 
@@ -270,10 +280,6 @@ export default function AddWordModal({
           <div style={{ display: 'grid', gap: 6 }}>
             <span>Word/Sentence</span>
             <div style={{ 
-              padding: '0.5rem', 
-              background: '#1a1a1a', 
-              borderRadius: 6, 
-              border: '1px solid #3a3a3a',
               color: '#9aa0a6',
               fontSize: '0.9rem',
               minHeight: '2.5rem',
@@ -285,7 +291,7 @@ export default function AddWordModal({
                 const isSentence = wordCount > 5
                 
                 if (isSentence && !selectedTerm) {
-                  return <>📝 <strong>Sentence detected</strong> - Select a word or phrase to define it</>
+                  return <>📝 <strong>Sentence detected</strong> - Select a word or phrase to define it, or use "Define with AI" to define the entire text</>
                 } else if (selectedTerm) {
                   return <span style={{ color: '#4caf50' }}>✅ <strong>Will save:</strong> "{selectedTerm}"</span>
                 } else if (wordCount > 0 && wordCount <= 5) {
@@ -320,18 +326,19 @@ export default function AddWordModal({
           <div style={{ 
             display: 'flex', 
             gap: '0.5rem', 
-            alignItems: 'center',
-            padding: '0.5rem',
-            background: '#1a1a1a',
-            borderRadius: 6,
-            border: '1px solid #3a3a3a',
-            minHeight: '2.5rem'
+            alignItems: 'center'
           }}>
-            {wordSelection && selectedTerm ? (
+            {(wordSelection && selectedTerm) || wordText.trim() ? (
               <>
-                <span style={{ color: '#9aa0a6', fontSize: '0.9rem' }}>
-                  Selected: "<strong>{selectedTerm}</strong>"
-                </span>
+                {wordSelection && selectedTerm ? (
+                  <span style={{ color: '#9aa0a6', fontSize: '0.9rem' }}>
+                    Selected: "<strong>{selectedTerm}</strong>"
+                  </span>
+                ) : (
+                  <span style={{ color: '#9aa0a6', fontSize: '0.9rem' }}>
+                    Word/Phrase: "<strong>{wordText.trim()}</strong>"
+                  </span>
+                )}
                 <button
                   type="button"
                   className="create-btn"
@@ -343,9 +350,14 @@ export default function AddWordModal({
                 </button>
               </>
             ) : (
-              <span style={{ color: '#9aa0a6', fontSize: '0.9rem', fontStyle: 'italic' }}>
-                Select text above to define with AI
-              </span>
+              <button
+                type="button"
+                className="btn"
+                disabled={true}
+                style={{ fontSize: '0.85rem', padding: '0.3rem 0.6rem', opacity: 0.5 }}
+              >
+                Define with AI
+              </button>
             )}
           </div>
 
