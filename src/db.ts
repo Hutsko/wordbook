@@ -4,6 +4,8 @@ export type WordGroup = { id: string; name: string; listsCount: number; createdA
 export type WordList = { id: string; name: string; groupId: string | null; wordsCount: number; createdAt: number; orderIndex: number }
 export type Word = { id: string; term: string; transcription: string | null; definition: string | null; strength: number; frequency: number; createdAt: number }
 export type Sentence = { id: string; wordId: string; text: string; createdAt: number }
+export type EpubFile = { id: string; groupId: string; filename: string; originalName: string; fileSize: number; createdAt: number }
+export type ReadingProgress = { id: string; fileId: string; location: string; progress: number; lastReadAt: number }
 
 export async function fetchLists(): Promise<WordList[]> {
   const res = await fetch(`${API_BASE}/lists`)
@@ -167,6 +169,131 @@ export async function clearAllCustomPhrases(): Promise<void> {
 export async function getAllCustomPhraseStrings(): Promise<string[]> {
   const rows = await fetchCustomPhrases()
   return rows.map((r) => r.phrase)
+}
+
+// EPUB Files
+export async function fetchEpubFiles(): Promise<EpubFile[]> {
+  const res = await fetch(`${API_BASE}/epub-files`)
+  if (!res.ok) throw new Error('Failed to fetch EPUB files')
+  const data = await res.json()
+  return data.map((f: any) => ({
+    id: f.id,
+    groupId: f.groupId,
+    filename: f.filename,
+    originalName: f.originalName,
+    fileSize: Number(f.fileSize),
+    createdAt: Number(f.createdAt)
+  }))
+}
+
+export async function fetchEpubFilesByGroup(groupId: string): Promise<EpubFile[]> {
+  const res = await fetch(`${API_BASE}/epub-files/group/${groupId}`)
+  if (!res.ok) throw new Error('Failed to fetch EPUB files for group')
+  const data = await res.json()
+  return data.map((f: any) => ({
+    id: f.id,
+    groupId: f.groupId,
+    filename: f.filename,
+    originalName: f.originalName,
+    fileSize: Number(f.fileSize),
+    createdAt: Number(f.createdAt)
+  }))
+}
+
+export async function fetchEpubFileById(fileId: string): Promise<EpubFile> {
+  const res = await fetch(`${API_BASE}/epub-files/${fileId}/info`)
+  if (!res.ok) throw new Error('Failed to fetch EPUB file')
+  const data = await res.json()
+  return {
+    id: data.id,
+    groupId: data.groupId,
+    filename: data.filename,
+    originalName: data.originalName,
+    fileSize: Number(data.fileSize),
+    createdAt: Number(data.createdAt)
+  }
+}
+
+export async function uploadEpubFile(groupId: string, file: File): Promise<EpubFile> {
+  const formData = new FormData()
+  formData.append('file', file)
+  formData.append('groupId', groupId)
+  
+  const res = await fetch(`${API_BASE}/epub-files`, {
+    method: 'POST',
+    body: formData
+  })
+  
+  if (!res.ok) {
+    const error = await res.json()
+    throw new Error(error.error || 'Failed to upload EPUB file')
+  }
+  
+  const data = await res.json()
+  return {
+    id: data.id,
+    groupId: groupId,
+    filename: data.filename,
+    originalName: data.originalName,
+    fileSize: Number(data.fileSize),
+    createdAt: Number(data.createdAt)
+  }
+}
+
+export async function downloadEpubFile(id: string): Promise<void> {
+  const res = await fetch(`${API_BASE}/epub-files/${id}`)
+  if (!res.ok) throw new Error('Failed to download EPUB file')
+  
+  const blob = await res.blob()
+  const url = window.URL.createObjectURL(blob)
+  const a = document.createElement('a')
+  a.href = url
+  a.download = '' // Let the browser use the filename from the response
+  document.body.appendChild(a)
+  a.click()
+  window.URL.revokeObjectURL(url)
+  document.body.removeChild(a)
+}
+
+export async function deleteEpubFile(id: string): Promise<void> {
+  const res = await fetch(`${API_BASE}/epub-files/${id}`, { method: 'DELETE' })
+  if (!res.ok) throw new Error('Failed to delete EPUB file')
+}
+
+// Reading Progress
+export async function saveReadingProgress(fileId: string, location: string, progress: number): Promise<ReadingProgress> {
+  const id = crypto.randomUUID()
+  const lastReadAt = Date.now()
+  await fetch(`${API_BASE}/reading-progress`, { 
+    method: 'POST', 
+    headers: { 'Content-Type': 'application/json' }, 
+    body: JSON.stringify({ id, fileId, location, progress, lastReadAt }) 
+  })
+  return { id, fileId, location, progress, lastReadAt }
+}
+
+export async function getReadingProgress(fileId: string): Promise<ReadingProgress | null> {
+  const res = await fetch(`${API_BASE}/reading-progress/${fileId}`)
+  if (!res.ok) {
+    if (res.status === 404) return null
+    throw new Error('Failed to fetch reading progress')
+  }
+  const data = await res.json()
+  return {
+    id: data.id,
+    fileId: data.fileId,
+    location: data.location,
+    progress: Number(data.progress),
+    lastReadAt: Number(data.lastReadAt)
+  }
+}
+
+export async function updateReadingProgress(fileId: string, location: string, progress: number): Promise<void> {
+  await fetch(`${API_BASE}/reading-progress/${fileId}`, { 
+    method: 'PATCH', 
+    headers: { 'Content-Type': 'application/json' }, 
+    body: JSON.stringify({ location, progress, lastReadAt: Date.now() }) 
+  })
 }
 
 

@@ -72,3 +72,79 @@ button:focus-visible {
     background-color: #f9f9f9;
   }
 }
+
+/* EPUB Viewer Styles */
+.epub-viewer {
+  font-family: Georgia, serif;
+  line-height: 1.6;
+}
+
+.epub-viewer iframe {
+  border: none;
+  width: 100%;
+  height: 100%;
+}
+
+/* EPUB.js specific styles */
+#epub-renderer {
+  width: 100%;
+  height: 100%;
+  overflow: auto;
+}
+
+#epub-renderer .epub-view {
+  width: 100%;
+  height: 100%;
+}
+
+#epub-renderer .epub-view iframe {
+  border: none;
+  width: 100%;
+  height: 100%;
+}
+
+/* Custom button styles for EPUB viewer */
+.btn {
+  border-radius: 6px;
+  border: 1px solid #3a3a3a;
+  padding: 0.5em 1em;
+  font-size: 0.9em;
+  font-weight: 500;
+  font-family: inherit;
+  background-color: #2a2a2a;
+  color: #e0e0e0;
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+.btn:hover {
+  background-color: #3a3a3a;
+  border-color: #4a4a4a;
+}
+
+.btn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.create-btn {
+  background-color: #4caf50;
+  color: white;
+  border-color: #45a049;
+}
+
+.create-btn:hover {
+  background-color: #45a049;
+  border-color: #3d8b40;
+}
+
+.btn.danger {
+  background-color: #ff4444;
+  color: white;
+  border-color: #cc3333;
+}
+
+.btn.danger:hover {
+  background-color: #cc3333;
+  border-color: #aa2222;
+}
