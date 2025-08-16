@@ -1,18 +1,21 @@
 import { useEffect, useRef, useState, useCallback } from 'react'
 import Epub, { Rendition } from 'epubjs'
+import { getReadingProgress, updateReadingProgress, saveReadingProgress } from '../db'
 
 interface EpubViewerProps {
+  fileId: string
   fileUrl: string
   fileName: string
   onClose: () => void
 }
 
-export default function EpubViewer({ fileUrl, fileName, onClose }: EpubViewerProps) {
+export default function EpubViewer({ fileId, fileUrl, fileName, onClose }: EpubViewerProps) {
   const viewerRef = useRef<HTMLDivElement>(null)
   const [rendition, setRendition] = useState<Rendition | null>(null)
   const [isLoading, setIsLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
   const [isBookReady, setIsBookReady] = useState(false)
+  const [pageInfo, setPageInfo] = useState<{ currentPage: number, totalPages: number } | null>(null)
 
   useEffect(() => {
     let isCancelled = false
@@ -21,6 +24,7 @@ export default function EpubViewer({ fileUrl, fileName, onClose }: EpubViewerPro
       return
     }
 
+    let isInitialRender = true
     const book = new (Epub as any)(fileUrl, { openAs: 'epub' })
     const rendition = book.renderTo(viewerRef.current, {
       width: '100%',
@@ -28,26 +32,60 @@ export default function EpubViewer({ fileUrl, fileName, onClose }: EpubViewerPro
       allowScriptedContent: true,
     })
 
-    rendition.on('displayed', () => {
-      if (!isCancelled) {
-        setIsLoading(false)
-        setIsBookReady(true)
+    book.ready.then(() => {
+      if (isCancelled) return
+      return book.locations.generate(1650) // Generate locations based on a rough char count per page
+    }).then(async () => {
+      if (isCancelled) {
+        return
       }
-    })
+      
+      const savedProgress = await getReadingProgress(fileId)
 
-    rendition.on('displayError', (err: Error) => {
-      if (!isCancelled) {
-        setError(err.message)
-      }
-    });
-    
-    setRendition(rendition)
-    
-    rendition.display().catch((err: Error) => {
-      if (!isCancelled) {
-        setError(err.message)
-        setIsLoading(false)
-      }
+      rendition.on('relocated', (newLocation: any) => {
+        if (!isCancelled) {
+          const cfi = newLocation.start.cfi
+          const progress = book.locations.percentageFromCfi(cfi)
+          updateReadingProgress(fileId, cfi, progress).catch(err => {
+            if (err.message.includes('404')) {
+              saveReadingProgress(fileId, cfi, progress)
+            }
+          })
+          const currentPage = book.locations.locationFromCfi(newLocation.start.cfi)
+          const totalPages = book.locations.total
+          setPageInfo({ currentPage, totalPages })
+        }
+      })
+
+      rendition.on('displayed', () => {
+        if (!isCancelled) {
+          setIsLoading(false)
+          setIsBookReady(true)
+          if (isInitialRender) {
+            // Set initial page info
+            const currentLocation = rendition.currentLocation()
+            const currentPage = book.locations.locationFromCfi(currentLocation.start.cfi)
+            const totalPages = book.locations.total
+            setPageInfo({ currentPage, totalPages })
+            isInitialRender = false
+          }
+        }
+      })
+
+      rendition.on('displayError', (err: Error) => {
+        if (!isCancelled) {
+          setError(err.message)
+        }
+      });
+      
+      setRendition(rendition)
+      
+      rendition.display(savedProgress?.location).catch((err: Error) => {
+        if (!isCancelled) {
+          setError(err.message)
+          setIsLoading(false)
+        }
+      })
     })
 
     return () => {
@@ -59,7 +97,7 @@ export default function EpubViewer({ fileUrl, fileName, onClose }: EpubViewerPro
         book.destroy()
       }
     }
-  }, [fileUrl])
+  }, [fileId, fileUrl])
 
   const nextPage = useCallback(() => {
     if (rendition && isBookReady) {
@@ -165,6 +203,28 @@ export default function EpubViewer({ fileUrl, fileName, onClose }: EpubViewerPro
               <div>{error}</div>
             </div>
           </div>
+        )}
+      </div>
+
+      {/* Footer */}
+      <div style={{
+        background: '#2a2a2a',
+        padding: '0.5rem 1rem',
+        textAlign: 'center',
+        color: 'white',
+        borderTop: '1px solid #3a3a3a',
+        fontSize: '0.9rem',
+        height: '30px',
+        display: 'flex',
+        alignItems: 'center',
+        justifyContent: 'center',
+      }}>
+        {pageInfo ? (
+          <span>
+            Page {pageInfo.currentPage} of {pageInfo.totalPages}
+          </span>
+        ) : (
+          <span>&nbsp;</span>
         )}
       </div>
     </div>
