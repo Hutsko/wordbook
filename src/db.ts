@@ -273,27 +273,42 @@ export async function saveReadingProgress(fileId: string, location: string, prog
 }
 
 export async function getReadingProgress(fileId: string): Promise<ReadingProgress | null> {
-  const res = await fetch(`${API_BASE}/reading-progress/${fileId}`)
-  if (!res.ok) {
-    if (res.status === 404) return null
-    throw new Error('Failed to fetch reading progress')
-  }
-  const data = await res.json()
-  return {
-    id: data.id,
-    fileId: data.fileId,
-    location: data.location,
-    progress: Number(data.progress),
-    lastReadAt: Number(data.lastReadAt)
+  try {
+    const res = await fetch(`${API_BASE}/reading-progress/${fileId}`)
+    if (!res.ok) {
+      if (res.status === 404) return null
+      throw new Error(`HTTP ${res.status}: ${res.statusText}`)
+    }
+    const data = await res.json()
+    return {
+      id: data.id,
+      fileId: data.fileId,
+      location: data.location,
+      progress: Number(data.progress),
+      lastReadAt: Number(data.lastReadAt)
+    }
+  } catch (error) {
+    // Don't log 404 errors as they're expected when no progress exists
+    if (error instanceof Error && error.message.includes('404')) {
+      return null
+    }
+    throw error
   }
 }
 
 export async function updateReadingProgress(fileId: string, location: string, progress: number): Promise<void> {
-  await fetch(`${API_BASE}/reading-progress/${fileId}`, { 
+  const res = await fetch(`${API_BASE}/reading-progress/${fileId}`, { 
     method: 'PATCH', 
     headers: { 'Content-Type': 'application/json' }, 
     body: JSON.stringify({ location, progress, lastReadAt: Date.now() }) 
   })
+  
+  if (!res.ok) {
+    if (res.status === 404) {
+      throw new Error('404: Reading progress not found')
+    }
+    throw new Error(`HTTP ${res.status}: ${res.statusText}`)
+  }
 }
 
 

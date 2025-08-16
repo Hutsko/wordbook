@@ -96,6 +96,14 @@ CREATE TABLE IF NOT EXISTS epub_files (
   created_at INTEGER NOT NULL,
   FOREIGN KEY(group_id) REFERENCES word_groups(id) ON DELETE CASCADE
 );
+CREATE TABLE IF NOT EXISTS reading_progress (
+  id TEXT PRIMARY KEY,
+  file_id TEXT NOT NULL,
+  location TEXT NOT NULL,
+  progress REAL NOT NULL,
+  last_read_at INTEGER NOT NULL,
+  FOREIGN KEY(file_id) REFERENCES epub_files(id) ON DELETE CASCADE
+);
 `)
 
 // Add frequency column to existing words table if it doesn't exist
@@ -613,6 +621,56 @@ app.delete('/api/epub-files/:id', (req, res) => {
     res.json({ ok: true })
   } else {
     res.status(404).json({ error: 'File not found' })
+  }
+})
+
+// Reading Progress
+app.post('/api/reading-progress', (req, res) => {
+  const { id, fileId, location, progress, lastReadAt } = req.body
+  
+  if (!id || !fileId || !location || progress === undefined || !lastReadAt) {
+    return res.status(400).json({ error: 'Missing required fields' })
+  }
+
+  try {
+    db.prepare('INSERT INTO reading_progress (id, file_id, location, progress, last_read_at) VALUES (?, ?, ?, ?, ?)')
+      .run(id, fileId, location, progress, lastReadAt)
+    res.status(201).json({ ok: true })
+  } catch (error) {
+    console.error('Reading progress save error:', error)
+    res.status(500).json({ error: 'Failed to save reading progress' })
+  }
+})
+
+app.get('/api/reading-progress/:fileId', (req, res) => {
+  const progress = db.prepare('SELECT id, file_id as fileId, location, progress, last_read_at as lastReadAt FROM reading_progress WHERE file_id = ?').get(req.params.fileId)
+  
+  if (progress) {
+    res.json(progress)
+  } else {
+    res.status(404).json({ error: 'Reading progress not found' })
+  }
+})
+
+app.patch('/api/reading-progress/:fileId', (req, res) => {
+  const { location, progress, lastReadAt } = req.body
+  
+  if (!location || progress === undefined || !lastReadAt) {
+    return res.status(400).json({ error: 'Missing required fields' })
+  }
+
+  try {
+    const result = db.prepare('UPDATE reading_progress SET location = ?, progress = ?, last_read_at = ? WHERE file_id = ?')
+      .run(location, progress, lastReadAt, req.params.fileId)
+    
+    if (result.changes === 0) {
+      res.status(404).json({ error: 'Reading progress not found' })
+    } else {
+      res.json({ ok: true })
+    }
+  } catch (error) {
+    console.error('Reading progress update error:', error)
+    res.status(500).json({ error: 'Failed to update reading progress' })
   }
 })
 
