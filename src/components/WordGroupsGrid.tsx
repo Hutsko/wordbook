@@ -1,7 +1,9 @@
 import React, { useState, useRef } from 'react'
-import { type WordGroup, type WordList } from '../db'
+import { useNavigate } from 'react-router-dom'
+import { type WordGroup, type WordList, fetchEpubFilesByGroup } from '../db'
 import DraggableListTile from './DraggableListTile'
 import DragPreview from './DragPreview'
+import EpubManagerModal from './EpubManagerModal'
 import { useDragAndDrop, type DragItem } from '../hooks/useDragAndDrop'
 
 interface WordGroupsGridProps {
@@ -31,7 +33,9 @@ export default function WordGroupsGrid({
   onCreateList,
   onMoveAndReorderList
 }: WordGroupsGridProps) {
+  const navigate = useNavigate()
   const [dropIndicator, setDropIndicator] = useState<{ zoneId: string; index: number; x: number } | null>(null)
+  const [epubManagerOpen, setEpubManagerOpen] = useState<{ groupId: string; groupName: string } | null>(null)
   
   const {
     dragState,
@@ -58,6 +62,27 @@ export default function WordGroupsGrid({
   const hasUngrouped = ungroupedLists.length > 0
 
 
+
+  const handleViewEpub = async (groupId: string) => {
+    try {
+      const epubFiles = await fetchEpubFilesByGroup(groupId)
+      if (epubFiles.length > 0) {
+        // Navigate to the first EPUB file
+        navigate(`/reader/${epubFiles[0].id}`)
+      } else {
+        // No EPUB files found, show a more helpful message
+        const confirmed = window.confirm(
+          'No EPUB files found for this group. Would you like to upload an EPUB file now?'
+        )
+        if (confirmed) {
+          setEpubManagerOpen({ groupId, groupName: groups.find(g => g.id === groupId)?.name || 'Unknown Group' })
+        }
+      }
+    } catch (error) {
+      console.error('Failed to fetch EPUB files:', error)
+      alert('Failed to load EPUB files. Please try again.')
+    }
+  }
 
   const handleDrop = (zoneId: string, index: number, event: React.DragEvent) => {
     console.log('Drop event triggered:', { zoneId, index, draggedItem: dragState.draggedItem })
@@ -291,6 +316,20 @@ export default function WordGroupsGrid({
               
               <div style={{ display: 'flex', gap: '0.5rem' }}>
                 <button 
+                  className="btn"
+                  onClick={() => setEpubManagerOpen({ groupId: group.id, groupName: group.name })}
+                  style={{ fontSize: '0.8rem', padding: '0.35rem 0.6rem' }}
+                >
+                  📚 Manage EPUB
+                </button>
+                <button 
+                  className="btn"
+                  onClick={() => handleViewEpub(group.id)}
+                  style={{ fontSize: '0.8rem', padding: '0.35rem 0.6rem', background: '#4caf50' }}
+                >
+                  📖 Read
+                </button>
+                <button 
                   className="create-btn"
                   onClick={() => onCreateList(group.id)}
                   style={{ fontSize: '0.8rem', padding: '0.35rem 0.6rem' }}
@@ -392,6 +431,16 @@ export default function WordGroupsGrid({
           </section>
         )
       })}
+
+      {/* EPUB Manager Modal */}
+      {epubManagerOpen && (
+        <EpubManagerModal
+          isOpen={true}
+          groupId={epubManagerOpen.groupId}
+          groupName={epubManagerOpen.groupName}
+          onClose={() => setEpubManagerOpen(null)}
+        />
+      )}
 
       {/* Ungrouped Lists */}
       {hasUngrouped && (

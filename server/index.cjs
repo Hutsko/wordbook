@@ -2,10 +2,51 @@ const express = require('express')
 const cors = require('cors')
 const Database = require('better-sqlite3')
 const path = require('path')
+const multer = require('multer')
+const fs = require('fs')
+const crypto = require('crypto')
+const AdmZip = require('adm-zip')
 
 const app = express()
 app.use(cors())
 app.use(express.json())
+
+// Configure multer for file uploads
+const storage = multer.diskStorage({
+  destination: function (req, file, cb) {
+    const uploadDir = path.join(__dirname, 'uploads')
+    if (!fs.existsSync(uploadDir)) {
+      fs.mkdirSync(uploadDir, { recursive: true })
+    }
+    cb(null, uploadDir)
+  },
+  filename: function (req, file, cb) {
+    // Use original filename with timestamp to avoid conflicts
+    const timestamp = Date.now()
+    const originalName = file.originalname
+    cb(null, `${timestamp}_${originalName}`)
+  }
+})
+
+const upload = multer({ 
+  storage: storage,
+  fileFilter: function (req, file, cb) {
+    // Allow EPUB files and compressed EPUB files
+    const fileName = file.originalname.toLowerCase()
+    if (file.mimetype === 'application/epub+zip' || 
+        file.mimetype === 'application/epub' ||
+        file.mimetype === 'application/zip' ||
+        fileName.endsWith('.epub') ||
+        fileName.endsWith('.epub.zip')) {
+      cb(null, true)
+    } else {
+      cb(new Error('Only EPUB files are allowed'), false)
+    }
+  },
+  limits: {
+    fileSize: 50 * 1024 * 1024 // 50MB limit
+  }
+})
 
 const dbPath = path.join(__dirname, 'wordbook.db')
 const db = new Database(dbPath)
@@ -45,6 +86,15 @@ CREATE TABLE IF NOT EXISTS custom_phrases (
   id TEXT PRIMARY KEY,
   phrase TEXT NOT NULL UNIQUE,
   created_at INTEGER NOT NULL
+);
+CREATE TABLE IF NOT EXISTS epub_files (
+  id TEXT PRIMARY KEY,
+  group_id TEXT NOT NULL,
+  filename TEXT NOT NULL,
+  original_name TEXT NOT NULL,
+  file_size INTEGER NOT NULL,
+  created_at INTEGER NOT NULL,
+  FOREIGN KEY(group_id) REFERENCES word_groups(id) ON DELETE CASCADE
 );
 `)
 
@@ -314,7 +364,257 @@ app.delete('/api/custom-phrases', (req, res) => {
   res.json({ ok: true })
 })
 
+// EPUB Files
+app.post('/api/epub-files', upload.single('file'), (req, res) => {
+  if (!req.file) {
+    return res.status(400).json({ error: 'No file uploaded.' })
+  }
 
+  const { groupId } = req.body
+  if (!groupId) {
+    return res.status(400).json({ error: 'Group ID is required.' })
+  }
+
+  try {
+    // Check if there's already an EPUB file for this group
+    const existingFile = db.prepare('SELECT id, filename FROM epub_files WHERE group_id = ?').get(groupId)
+    
+    if (existingFile) {
+      // Delete the existing file from disk
+      const existingFilePath = path.join(__dirname, 'uploads', existingFile.filename)
+      if (fs.existsSync(existingFilePath)) {
+        fs.unlinkSync(existingFilePath)
+      }
+      
+      // Delete the existing record from database
+      db.prepare('DELETE FROM epub_files WHERE id = ?').run(existingFile.id)
+    }
+    
+    const id = crypto.randomBytes(16).toString('hex')
+    const createdAt = Date.now()
+    db.prepare('INSERT INTO epub_files (id, group_id, filename, original_name, file_size, created_at) VALUES (?, ?, ?, ?, ?, ?)')
+      .run(id, groupId, req.file.filename, req.file.originalname, req.file.size, createdAt)
+    res.status(201).json({ 
+      ok: true, 
+      id: id,
+      filename: req.file.filename,
+      originalName: req.file.originalname,
+      fileSize: req.file.size,
+      createdAt: createdAt
+    })
+  } catch (error) {
+    console.error('EPUB upload error:', error)
+    res.status(500).json({ error: 'Failed to upload file' })
+  }
+})
+
+app.get('/api/epub-files', (req, res) => {
+  const rows = db.prepare('SELECT id, group_id as groupId, filename, original_name as originalName, file_size as fileSize, created_at as createdAt FROM epub_files ORDER BY created_at DESC').all()
+  res.json(rows)
+})
+
+app.get('/api/epub-files/group/:groupId', (req, res) => {
+  const rows = db.prepare('SELECT id, group_id as groupId, filename, original_name as originalName, file_size as fileSize, created_at as createdAt FROM epub_files WHERE group_id = ? ORDER BY created_at DESC').all(req.params.groupId)
+  res.json(rows)
+})
+
+app.get('/api/epub-files/:id/info', (req, res) => {
+  const file = db.prepare('SELECT id, group_id as groupId, filename, original_name as originalName, file_size as fileSize, created_at as createdAt FROM epub_files WHERE id = ?').get(req.params.id)
+  if (file) {
+    res.json(file)
+  } else {
+    res.status(404).json({ error: 'File not found' })
+  }
+})
+
+app.get('/api/epub-files/:id', (req, res) => {
+  const file = db.prepare('SELECT filename, original_name as originalName FROM epub_files WHERE id = ?').get(req.params.id)
+  if (file) {
+    const filePath = path.join(__dirname, 'uploads', file.filename)
+    
+    // Set CORS headers for EPUB files
+    res.setHeader('Access-Control-Allow-Origin', '*')
+    res.setHeader('Access-Control-Allow-Methods', 'GET, OPTIONS')
+    res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Range')
+    
+    // Set content type based on file extension
+    const ext = path.extname(file.originalName).toLowerCase()
+    if (ext === '.epub') {
+      res.setHeader('Content-Type', 'application/epub+zip')
+    } else if (ext === '.zip') {
+      res.setHeader('Content-Type', 'application/zip')
+    }
+    
+    res.download(filePath, file.originalName)
+  } else {
+    res.status(404).json({ error: 'File not found' })
+  }
+})
+
+// New endpoint for decompressed EPUB viewing
+// Test endpoint to check if file exists and is accessible
+app.get('/api/epub-files/:id/test', (req, res) => {
+  console.log('EPUB test request for ID:', req.params.id)
+  const file = db.prepare('SELECT filename, original_name as originalName FROM epub_files WHERE id = ?').get(req.params.id)
+  if (!file) {
+    console.log('File not found in database for ID:', req.params.id)
+    return res.status(404).json({ error: 'File not found' })
+  }
+  
+  const filePath = path.join(__dirname, 'uploads', file.filename)
+  const exists = fs.existsSync(filePath)
+  const stats = exists ? fs.statSync(filePath) : null
+  
+  res.json({
+    exists,
+    filename: file.filename,
+    originalName: file.originalName,
+    fileSize: stats ? stats.size : null,
+    filePath: filePath
+  })
+})
+
+app.get('/api/epub-files/:id/view', (req, res) => {
+  console.log('EPUB view request for ID:', req.params.id)
+  const file = db.prepare('SELECT filename, original_name as originalName FROM epub_files WHERE id = ?').get(req.params.id)
+  if (!file) {
+    console.log('File not found in database for ID:', req.params.id)
+    return res.status(404).json({ error: 'File not found' })
+  }
+  console.log('Found file:', file.filename, 'Original name:', file.originalName)
+
+  const filePath = path.join(__dirname, 'uploads', file.filename)
+  const ext = path.extname(file.originalName).toLowerCase()
+  
+  try {
+    if (ext === '.zip' || file.originalName.toLowerCase().endsWith('.epub.zip')) {
+      // Handle compressed EPUB file
+      console.log('Decompressing EPUB file:', file.originalName)
+      
+      const zip = new AdmZip(filePath)
+      const zipEntries = zip.getEntries()
+      
+            console.log('ZIP entries:', zipEntries.map(entry => entry.entryName))
+      
+      // Check if this is actually an EPUB file (has mimetype with application/epub+zip)
+      const mimetypeEntry = zipEntries.find(entry => entry.entryName === 'mimetype')
+      if (mimetypeEntry) {
+        const mimetype = mimetypeEntry.getData().toString()
+        console.log('Mimetype found:', mimetype)
+        
+        if (mimetype.includes('application/epub+zip')) {
+          // This is an EPUB file, serve it directly
+          console.log('This is a valid EPUB file, serving all contents')
+          
+          // Set CORS headers
+          res.setHeader('Access-Control-Allow-Origin', '*')
+          res.setHeader('Access-Control-Allow-Methods', 'GET, OPTIONS')
+          res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Range')
+          res.setHeader('Content-Type', 'application/epub+zip')
+          
+          // Send the ZIP data directly (EPUB is just a ZIP with specific structure)
+          const zipData = zip.toBuffer()
+          res.setHeader('Content-Length', zipData.length)
+          res.send(zipData)
+          return
+        }
+      }
+      
+      // If not a direct EPUB, look for EPUB files inside the ZIP
+      const epubEntries = zipEntries.filter(entry => 
+        entry.entryName.toLowerCase().endsWith('.epub')
+      )
+      
+      if (epubEntries.length > 0) {
+        console.log('Found EPUB files in ZIP:', epubEntries.map(e => e.entryName))
+        
+        // Use the first EPUB file found
+        const epubEntry = epubEntries[0]
+        console.log('Using EPUB file:', epubEntry.entryName)
+        
+        // Set CORS headers
+        res.setHeader('Access-Control-Allow-Origin', '*')
+        res.setHeader('Access-Control-Allow-Methods', 'GET, OPTIONS')
+        res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Range')
+        res.setHeader('Content-Type', 'application/epub+zip')
+        res.setHeader('Content-Length', epubEntry.header.size)
+        
+        // Send the extracted EPUB content
+        res.send(epubEntry.getData())
+        return
+      }
+      
+      // Look for EPUB folder structure (common pattern)
+      const epubFolders = zipEntries.filter(entry => 
+        entry.entryName.endsWith('.epub/') || 
+        (entry.entryName.includes('.epub/') && entry.entryName.endsWith('/'))
+      )
+      
+      if (epubFolders.length > 0) {
+        console.log('Found EPUB folder structure:', epubFolders.map(e => e.entryName))
+        
+        // Create a new ZIP with the EPUB contents at the root
+        const newZip = new AdmZip()
+        const folderName = epubFolders[0].entryName.replace(/\/$/, '') // Remove trailing slash
+        
+        // Copy all files from the EPUB folder to the root of the new ZIP
+        zipEntries.forEach(entry => {
+          if (entry.entryName.startsWith(folderName + '/') && !entry.entryName.endsWith('/')) {
+            const newName = entry.entryName.substring(folderName.length + 1) // Remove folder prefix
+            newZip.addFile(newName, entry.getData())
+          }
+        })
+        
+        console.log('Created new EPUB structure with files at root')
+        
+        // Set CORS headers
+        res.setHeader('Access-Control-Allow-Origin', '*')
+        res.setHeader('Access-Control-Allow-Methods', 'GET, OPTIONS')
+        res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Range')
+        res.setHeader('Content-Type', 'application/epub+zip')
+        
+        // Send the reconstructed EPUB
+        const newZipData = newZip.toBuffer()
+        res.setHeader('Content-Length', newZipData.length)
+        res.send(newZipData)
+        return
+      }
+      
+      // If we get here, no EPUB file was found
+      return res.status(400).json({ 
+        error: 'No EPUB file found in the ZIP archive. Available files: ' + 
+               zipEntries.map(entry => entry.entryName).join(', ')
+      })
+      
+    } else {
+      // Handle regular EPUB file
+      res.setHeader('Access-Control-Allow-Origin', '*')
+      res.setHeader('Access-Control-Allow-Methods', 'GET, OPTIONS')
+      res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Range')
+      res.setHeader('Content-Type', 'application/epub+zip')
+      
+      res.download(filePath, file.originalName)
+    }
+    
+  } catch (error) {
+    console.error('Error serving EPUB file:', error)
+    res.status(500).json({ error: 'Failed to serve EPUB file' })
+  }
+})
+
+app.delete('/api/epub-files/:id', (req, res) => {
+  const file = db.prepare('SELECT filename FROM epub_files WHERE id = ?').get(req.params.id)
+  if (file) {
+    const filePath = path.join(__dirname, 'uploads', file.filename)
+    if (fs.existsSync(filePath)) {
+      fs.unlinkSync(filePath)
+    }
+    db.prepare('DELETE FROM epub_files WHERE id = ?').run(req.params.id)
+    res.json({ ok: true })
+  } else {
+    res.status(404).json({ error: 'File not found' })
+  }
+})
 
 const port = process.env.PORT || 3001
 app.listen(port, () => console.log(`API listening on http://localhost:${port}`))
