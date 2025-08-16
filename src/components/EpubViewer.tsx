@@ -9,6 +9,23 @@ interface EpubViewerProps {
   onClose: () => void
 }
 
+const THEMES = {
+  light: {
+    body: {
+      'background': '#fff',
+      'color': '#000',
+      'line-height': '1.6',
+    },
+  },
+  dark: {
+    body: {
+      'background': '#1a1a1a',
+      'color': '#e0e0e0',
+      'line-height': '1.6',
+    },
+  },
+}
+
 export default function EpubViewer({ fileId, fileUrl, fileName, onClose }: EpubViewerProps) {
   const viewerRef = useRef<HTMLDivElement>(null)
   const [rendition, setRendition] = useState<Rendition | null>(null)
@@ -16,6 +33,14 @@ export default function EpubViewer({ fileId, fileUrl, fileName, onClose }: EpubV
   const [error, setError] = useState<string | null>(null)
   const [isBookReady, setIsBookReady] = useState(false)
   const [pageInfo, setPageInfo] = useState<{ currentPage: number, totalPages: number } | null>(null)
+  const [fontSize, setFontSize] = useState<number>(() => {
+    const savedSize = localStorage.getItem('epub-font-size')
+    return savedSize ? parseInt(savedSize, 10) : 16
+  })
+  const [theme, setTheme] = useState<'light' | 'dark'>(() => {
+    const savedTheme = localStorage.getItem('epub-theme')
+    return (savedTheme === 'light' || savedTheme === 'dark') ? savedTheme : 'dark'
+  })
 
   useEffect(() => {
     let isCancelled = false
@@ -31,6 +56,13 @@ export default function EpubViewer({ fileId, fileUrl, fileName, onClose }: EpubV
       height: '100%',
       allowScriptedContent: true,
     })
+
+    Object.keys(THEMES).forEach(name => {
+      rendition.themes.register(name, (THEMES as any)[name])
+    })
+
+    // Force line height override for all themes and book styles
+    rendition.themes.override('line-height', '1.6', true)
 
     book.ready.then(() => {
       if (isCancelled) return
@@ -112,6 +144,20 @@ export default function EpubViewer({ fileId, fileUrl, fileName, onClose }: EpubV
   }, [rendition, isBookReady])
 
   useEffect(() => {
+    localStorage.setItem('epub-font-size', String(fontSize))
+    if (rendition) {
+      rendition.themes.fontSize(`${fontSize}px`)
+    }
+  }, [fontSize, rendition])
+
+  useEffect(() => {
+    localStorage.setItem('epub-theme', theme)
+    if (rendition) {
+      rendition.themes.default(THEMES[theme])
+    }
+  }, [theme, rendition])
+
+  useEffect(() => {
     const handleKeyDown = (event: KeyboardEvent) => {
       if (event.key === 'ArrowLeft') {
         prevPage()
@@ -119,11 +165,23 @@ export default function EpubViewer({ fileId, fileUrl, fileName, onClose }: EpubV
         nextPage()
       }
     }
+
+    // Attach to main window
     window.addEventListener('keydown', handleKeyDown)
-    return () => {
-      window.removeEventListener('keydown', handleKeyDown)
+    // Attach to rendition iframe
+    if (rendition) {
+      rendition.on('keydown', handleKeyDown)
     }
-  }, [prevPage, nextPage])
+
+    return () => {
+      // Clean up from both
+      window.removeEventListener('keydown', handleKeyDown)
+      if (rendition) {
+        // The .off method exists on the Emitter mixin, even if not in all type defs
+        ;(rendition as any).off('keydown', handleKeyDown)
+      }
+    }
+  }, [rendition, prevPage, nextPage])
 
   return (
     <div style={{
@@ -144,7 +202,42 @@ export default function EpubViewer({ fileId, fileUrl, fileName, onClose }: EpubV
         borderBottom: '1px solid #3a3a3a',
         color: 'white'
       }}>
-        <h2 style={{ margin: 0, fontSize: '1.1rem' }}>📖 {fileName}</h2>
+        <div style={{ display: 'flex', alignItems: 'center', gap: '1rem' }}>
+          <h2 style={{ margin: 0, fontSize: '1.1rem' }}>📖 {fileName}</h2>
+          {/* Font Size Controls */}
+          <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+            <span style={{ fontSize: '0.9rem' }}>Font:</span>
+            <button
+              className="btn"
+              onClick={() => setFontSize(s => Math.max(12, s - 1))}
+              style={{ fontSize: '0.8rem', padding: '0.2rem 0.4rem' }}
+              disabled={!isBookReady}
+            >
+              A-
+            </button>
+            <span style={{ fontSize: '0.9rem', minWidth: '2rem', textAlign: 'center' }}>
+              {fontSize}px
+            </span>
+            <button
+              className="btn"
+              onClick={() => setFontSize(s => Math.min(32, s + 1))}
+              style={{ fontSize: '0.8rem', padding: '0.2rem 0.4rem' }}
+              disabled={!isBookReady}
+            >
+              A+
+            </button>
+          </div>
+
+          {/* Theme Toggle */}
+          <button
+            className="btn"
+            onClick={() => setTheme(t => t === 'dark' ? 'light' : 'dark')}
+            style={{ fontSize: '0.8rem', padding: '0.3rem 0.6rem' }}
+            disabled={!isBookReady}
+          >
+            {theme === 'dark' ? '☀️ Light' : '🌙 Dark'}
+          </button>
+        </div>
         <div>
           <button className="btn" onClick={prevPage} style={{ marginRight: '1rem' }} disabled={!isBookReady}>
             ‹ Prev
@@ -167,19 +260,19 @@ export default function EpubViewer({ fileId, fileUrl, fileName, onClose }: EpubV
         flex: 1, 
         position: 'relative', 
         overflow: 'hidden',
-        background: '#1a1a1a'
+        background: theme === 'dark' ? '#1a1a1a' : '#00000000'
       }}>
-        <div ref={viewerRef} style={{ height: '100%' }} />
+        <div ref={viewerRef} style={{ height: '100%', background: theme === 'dark' ? '#1a1a1a' : '#fff' }} />
 
         {isLoading && (
           <div style={{
             position: 'absolute',
             inset: 0,
-            background: 'rgba(26, 26, 26, 0.8)',
+            background: theme === 'dark' ? 'rgba(26, 26, 26, 0.8)' : 'rgba(255, 255, 255, 0.8)',
             display: 'flex',
             alignItems: 'center',
             justifyContent: 'center',
-            color: 'white',
+            color: theme === 'dark' ? 'white' : 'black',
             fontSize: '1.2rem'
           }}>
             Loading Book...
@@ -190,7 +283,7 @@ export default function EpubViewer({ fileId, fileUrl, fileName, onClose }: EpubV
           <div style={{
             position: 'absolute',
             inset: 0,
-            background: 'rgba(26, 26, 26, 0.8)',
+            background: theme === 'dark' ? 'rgba(26, 26, 26, 0.8)' : 'rgba(255, 255, 255, 0.8)',
             display: 'flex',
             alignItems: 'center',
             justifyContent: 'center',
