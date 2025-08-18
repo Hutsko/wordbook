@@ -290,12 +290,33 @@ export default function AddWordModal({
                 const wordCount = wordText.trim().split(/\s+/).filter(word => word.length > 0).length
                 const isSentence = wordCount > 5
                 
+                // Helper function to truncate text for display
+                const truncateText = (text: string, maxLength = 50) => {
+                  return text.length <= maxLength ? text : text.slice(0, maxLength) + '...'
+                }
+                
                 if (isSentence && !selectedTerm) {
-                  return <>📝 <strong>Sentence detected</strong> - Select a word or phrase to define it, or use "Define with AI" to define the entire text</>
+                  return <span style={{ display: 'block', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>📝 <strong>Sentence detected.</strong> Select a word to define.</span>
                 } else if (selectedTerm) {
-                  return <span style={{ color: '#4caf50' }}>✅ <strong>Will save:</strong> "{selectedTerm}"</span>
+                  const truncatedTerm = truncateText(selectedTerm)
+                  return (
+                    <span 
+                      style={{ display: 'block', color: '#9aa0a6', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}
+                      title={selectedTerm.length > 50 ? selectedTerm : undefined}
+                    >
+                      ✅ Will save: "{truncatedTerm}"
+                    </span>
+                  )
                 } else if (wordCount > 0 && wordCount <= 5) {
-                  return <span style={{ color: '#4caf50' }}>✅ <strong>Will save:</strong> "{wordText.trim()}"</span>
+                  const truncatedText = truncateText(wordText.trim())
+                  return (
+                    <span 
+                      style={{ display: 'block', color: '#9aa0a6', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}
+                      title={wordText.trim().length > 50 ? wordText.trim() : undefined}
+                    >
+                      ✅ Will save: "{truncatedText}"
+                    </span>
+                  )
                 } else {
                   return <span style={{ color: '#9aa0a6', fontStyle: 'italic' }}>Enter text above to see what will be saved</span>
                 }
@@ -331,12 +352,18 @@ export default function AddWordModal({
             {(wordSelection && selectedTerm) || wordText.trim() ? (
               <>
                 {wordSelection && selectedTerm ? (
-                  <span style={{ color: '#9aa0a6', fontSize: '0.9rem' }}>
-                    Selected: "<strong>{selectedTerm}</strong>"
+                  <span 
+                    style={{ color: '#9aa0a6', fontSize: '0.9rem' }}
+                    title={selectedTerm.length > 30 ? selectedTerm : undefined}
+                  >
+                    Selected: "<strong>{selectedTerm.length > 30 ? selectedTerm.slice(0, 30) + '...' : selectedTerm}</strong>"
                   </span>
                 ) : (
-                  <span style={{ color: '#9aa0a6', fontSize: '0.9rem' }}>
-                    Word/Phrase: "<strong>{wordText.trim()}</strong>"
+                  <span 
+                    style={{ color: '#9aa0a6', fontSize: '0.9rem' }}
+                    title={wordText.trim().length > 30 ? wordText.trim() : undefined}
+                  >
+                    Word/Phrase: "<strong>{wordText.trim().length > 30 ? wordText.trim().slice(0, 30) + '...' : wordText.trim()}</strong>"
                   </span>
                 )}
                 <button

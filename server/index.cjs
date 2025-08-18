@@ -96,6 +96,24 @@ CREATE TABLE IF NOT EXISTS epub_files (
   created_at INTEGER NOT NULL,
   FOREIGN KEY(group_id) REFERENCES word_groups(id) ON DELETE CASCADE
 );
+CREATE TABLE IF NOT EXISTS reading_progress (
+  id TEXT PRIMARY KEY,
+  file_id TEXT NOT NULL,
+  location TEXT NOT NULL,
+  progress REAL NOT NULL,
+  last_read_at INTEGER NOT NULL,
+  FOREIGN KEY(file_id) REFERENCES epub_files(id) ON DELETE CASCADE
+);
+CREATE TABLE IF NOT EXISTS highlights (
+  id TEXT PRIMARY KEY,
+  file_id TEXT NOT NULL,
+  cfi_range TEXT NOT NULL,
+  text TEXT NOT NULL,
+  color TEXT NOT NULL,
+  note TEXT,
+  created_at INTEGER NOT NULL,
+  FOREIGN KEY(file_id) REFERENCES epub_files(id) ON DELETE CASCADE
+);
 `)
 
 // Add frequency column to existing words table if it doesn't exist
@@ -134,6 +152,15 @@ try {
 } catch (error) {
   // Column already exists, ignore error
   console.log('Order index column already exists or error adding it:', error.message)
+}
+
+// Add note column to highlights table if it doesn't exist
+try {
+  db.exec('ALTER TABLE highlights ADD COLUMN note TEXT')
+  console.log('Added note column to highlights table')
+} catch (error) {
+  // Column already exists, ignore error
+  console.log('Note column already exists or error adding it:', error.message)
 }
 
 // Seed default phrases once (only if table is empty)
@@ -613,6 +640,110 @@ app.delete('/api/epub-files/:id', (req, res) => {
     res.json({ ok: true })
   } else {
     res.status(404).json({ error: 'File not found' })
+  }
+})
+
+// Reading Progress
+app.post('/api/reading-progress', (req, res) => {
+  const { id, fileId, location, progress, lastReadAt } = req.body
+  
+  if (!id || !fileId || !location || progress === undefined || !lastReadAt) {
+    return res.status(400).json({ error: 'Missing required fields' })
+  }
+
+  try {
+    db.prepare('INSERT INTO reading_progress (id, file_id, location, progress, last_read_at) VALUES (?, ?, ?, ?, ?)')
+      .run(id, fileId, location, progress, lastReadAt)
+    res.status(201).json({ ok: true })
+  } catch (error) {
+    console.error('Reading progress save error:', error)
+    res.status(500).json({ error: 'Failed to save reading progress' })
+  }
+})
+
+app.get('/api/reading-progress/:fileId', (req, res) => {
+  const progress = db.prepare('SELECT id, file_id as fileId, location, progress, last_read_at as lastReadAt FROM reading_progress WHERE file_id = ?').get(req.params.fileId)
+  
+  if (progress) {
+    res.json(progress)
+  } else {
+    res.status(404).json({ error: 'Reading progress not found' })
+  }
+})
+
+app.patch('/api/reading-progress/:fileId', (req, res) => {
+  const { location, progress, lastReadAt } = req.body
+  
+  if (!location || progress === undefined || !lastReadAt) {
+    return res.status(400).json({ error: 'Missing required fields' })
+  }
+
+  try {
+    const result = db.prepare('UPDATE reading_progress SET location = ?, progress = ?, last_read_at = ? WHERE file_id = ?')
+      .run(location, progress, lastReadAt, req.params.fileId)
+    
+    if (result.changes === 0) {
+      res.status(404).json({ error: 'Reading progress not found' })
+    } else {
+      res.json({ ok: true })
+    }
+  } catch (error) {
+    console.error('Reading progress update error:', error)
+    res.status(500).json({ error: 'Failed to update reading progress' })
+  }
+})
+
+// Highlights API
+app.post('/api/highlights', (req, res) => {
+  const { id, fileId, cfiRange, text, color, createdAt } = req.body
+  try {
+    db.prepare('INSERT INTO highlights (id, file_id, cfi_range, text, color, created_at) VALUES (?, ?, ?, ?, ?, ?)')
+      .run(id, fileId, cfiRange, text, color, createdAt)
+    res.status(201).json({ ok: true })
+  } catch (error) {
+    console.error('Highlight save error:', error)
+    res.status(500).json({ error: 'Failed to save highlight' })
+  }
+})
+
+app.get('/api/highlights/:fileId', (req, res) => {
+  try {
+    const highlights = db.prepare('SELECT id, file_id as fileId, cfi_range as cfiRange, text, color, note, created_at as createdAt FROM highlights WHERE file_id = ? ORDER BY created_at ASC').all(req.params.fileId)
+    res.json(highlights)
+  } catch (error) {
+    console.error('Highlights fetch error:', error)
+    res.status(500).json({ error: 'Failed to fetch highlights' })
+  }
+})
+
+app.patch('/api/highlights/:id', (req, res) => {
+  const { note } = req.body
+  console.log(`[DEBUG] Received PATCH on /api/highlights/${req.params.id} with note:`, note);
+  try {
+    // First, ensure the highlight exists
+    const existing = db.prepare('SELECT id FROM highlights WHERE id = ?').get(req.params.id)
+    if (!existing) {
+      console.log('[DEBUG] Highlight not found in database.');
+      return res.status(404).json({ error: 'Highlight not found' })
+    }
+
+    const result = db.prepare('UPDATE highlights SET note = ? WHERE id = ?').run(note, req.params.id)
+    // Even if result.changes === 0 (no-op), treat as success since the row exists
+    console.log('[DEBUG] Database update attempted. changes:', result.changes)
+    return res.json({ ok: true })
+  } catch (error) {
+    console.error('[DEBUG] Highlight update error:', error)
+    res.status(500).json({ error: 'Failed to update highlight' })
+  }
+})
+
+app.delete('/api/highlights/:id', (req, res) => {
+  try {
+    db.prepare('DELETE FROM highlights WHERE id = ?').run(req.params.id)
+    res.json({ ok: true })
+  } catch (error) {
+    console.error('Highlight delete error:', error)
+    res.status(500).json({ error: 'Failed to delete highlight' })
   }
 })
 
