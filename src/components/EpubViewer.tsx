@@ -1,6 +1,9 @@
 import { useEffect, useRef, useState, useCallback } from 'react'
 import Epub, { Rendition } from 'epubjs'
-import { getReadingProgress, updateReadingProgress, saveReadingProgress } from '../db'
+import { getReadingProgress, updateReadingProgress, saveReadingProgress, fetchHighlights, saveHighlight, deleteHighlight, updateHighlightNote } from '../db'
+import type { HighlightRecord } from '../db'
+import { EpubSidebar } from './epub/EpubSidebar'
+import { EpubContent } from './epub/EpubContent'
 
 interface EpubViewerProps {
   fileId: string
@@ -16,6 +19,23 @@ const THEMES = {
       'color': '#000',
       'line-height': '1.6',
     },
+    '.hl': {
+      'fill': 'yellow', 'fill-opacity': '0.3', 'mix-blend-mode': 'multiply'
+    },
+    '.hl *': {
+      'fill': 'yellow', 'fill-opacity': '0.3', 'mix-blend-mode': 'multiply'
+    },
+    '.hl:hover': {
+      'fill': 'gold !important', 'fill-opacity': '0.5 !important'
+    },
+    '.hl-active': {
+      'fill': 'goldenrod !important',
+      'fill-opacity': '0.6 !important'
+    },
+    '.hl-active *': {
+      'fill': 'goldenrod !important',
+      'fill-opacity': '0.6 !important'
+    }
   },
   dark: {
     body: {
@@ -23,6 +43,23 @@ const THEMES = {
       'color': '#e0e0e0',
       'line-height': '1.6',
     },
+    '.hl': {
+      'fill': 'yellow', 'fill-opacity': '0.3', 'mix-blend-mode': 'multiply'
+    },
+    '.hl *': {
+      'fill': 'yellow', 'fill-opacity': '0.3', 'mix-blend-mode': 'multiply'
+    },
+    '.hl:hover': {
+      'fill': 'gold !important', 'fill-opacity': '0.5 !important'
+    },
+    '.hl-active': {
+      'fill': 'goldenrod !important',
+      'fill-opacity': '0.6 !important'
+    },
+    '.hl-active *': {
+      'fill': 'goldenrod !important',
+      'fill-opacity': '0.6 !important'
+    }
   },
 }
 
@@ -33,6 +70,8 @@ export default function EpubViewer({ fileId, fileUrl, fileName, onClose }: EpubV
   const [error, setError] = useState<string | null>(null)
   const [isBookReady, setIsBookReady] = useState(false)
   const [pageInfo, setPageInfo] = useState<{ currentPage: number, totalPages: number } | null>(null)
+  const bookRef = useRef<any>(null)
+  const renditionRef = useRef<any>(null)
   const [fontSize, setFontSize] = useState<number>(() => {
     const savedSize = localStorage.getItem('epub-font-size')
     return savedSize ? parseInt(savedSize, 10) : 16
@@ -41,92 +80,187 @@ export default function EpubViewer({ fileId, fileUrl, fileName, onClose }: EpubV
     const savedTheme = localStorage.getItem('epub-theme')
     return (savedTheme === 'light' || savedTheme === 'dark') ? savedTheme : 'dark'
   })
+  const [currentSelection, setCurrentSelection] = useState<{ cfiRange: string; contents: any } | null>(null)
+  const [selectedHighlightText, setSelectedHighlightText] = useState<string | null>(null)
+  const [activeHighlight, setActiveHighlight] = useState<HighlightRecord | null>(null)
+  const activeHighlightRef = useRef<HighlightRecord | null>(null)
 
+  useEffect(() => {
+    activeHighlightRef.current = activeHighlight;
+  }, [activeHighlight]);
+
+  // This is the core loading and setup effect.
   useEffect(() => {
     let isCancelled = false
 
     if (!viewerRef.current) {
-      return
-    }
-
-    let isInitialRender = true
-    const book = new (Epub as any)(fileUrl, { openAs: 'epub' })
-    const rendition = book.renderTo(viewerRef.current, {
-      width: '100%',
-      height: '100%',
-      allowScriptedContent: true,
-    })
-
-    Object.keys(THEMES).forEach(name => {
-      rendition.themes.register(name, (THEMES as any)[name])
-    })
-
-    // Force line height override for all themes and book styles
-    rendition.themes.override('line-height', '1.6', true)
-
-    book.ready.then(() => {
-      if (isCancelled) return
-      return book.locations.generate(1650) // Generate locations based on a rough char count per page
-    }).then(async () => {
-      if (isCancelled) {
         return
       }
-      
-      const savedProgress = await getReadingProgress(fileId)
 
-      rendition.on('relocated', (newLocation: any) => {
-        if (!isCancelled) {
-          const cfi = newLocation.start.cfi
-          const progress = book.locations.percentageFromCfi(cfi)
-          updateReadingProgress(fileId, cfi, progress).catch(err => {
-            if (err.message.includes('404')) {
-              saveReadingProgress(fileId, cfi, progress)
-            }
+    // --- State for this effect's lifecycle ---
+    let locationsReady = false
+    let currentLocationCfi: string | null = null
+
+    // --- Helpers to sync active highlight ---
+    const applyActiveStateToDoc = (doc: Document) => {
+      try {
+        doc.querySelectorAll('.hl-active').forEach((el: Element) => el.classList.remove('hl-active'))
+        const current = activeHighlight
+        if (current) {
+          const matches = doc.querySelectorAll(`[data-epubcfi="${current.cfiRange}"]`)
+          matches.forEach(el => el.classList.add('hl-active'))
+        }
+      } catch {}
+    }
+
+    const applyActiveStateAcrossViews = () => {
+      try {
+        const r: any = renditionRef.current
+        const views = r?.getViews ? r.getViews() : (r?.manager?.views || [])
+        if (views && Array.isArray(views)) {
+          views.forEach((v: any) => {
+            const doc = v?.document || v?.iframe?.contentDocument
+            if (doc) applyActiveStateToDoc(doc)
           })
-          const currentPage = book.locations.locationFromCfi(newLocation.start.cfi)
-          const totalPages = book.locations.total
-          setPageInfo({ currentPage, totalPages })
+        } else if (r?.view?.document) {
+          applyActiveStateToDoc(r.view.document)
         }
-      })
+      } catch {}
+    }
 
-      rendition.on('displayed', () => {
-        if (!isCancelled) {
-          setIsLoading(false)
-          setIsBookReady(true)
-          if (isInitialRender) {
-            // Set initial page info
-            const currentLocation = rendition.currentLocation()
-            const currentPage = book.locations.locationFromCfi(currentLocation.start.cfi)
-            const totalPages = book.locations.total
+    // --- Main Logic ---
+    fetch(fileUrl)
+      .then(response => {
+        return response.arrayBuffer()
+      })
+      .then(arrayBuffer => {
+        if (isCancelled) { return Promise.reject(new Error('Cancelled')) }
+        
+        const book = new (Epub as any)(arrayBuffer)
+        bookRef.current = book
+
+        const rendition = book.renderTo(viewerRef.current!, {
+          width: '100%',
+          height: '100%',
+          allowScriptedContent: true,
+        })
+        renditionRef.current = rendition
+        
+        Object.keys(THEMES).forEach(name => {
+          rendition.themes.register(name, (THEMES as any)[name])
+        })
+        rendition.themes.override('line-height', '1.6', true)
+        
+        rendition.on('rendered', (_section: any, view: any) => {
+          const style = view.document.createElement('style')
+          style.innerHTML = `
+            .hl { fill: yellow; fill-opacity: 0.3; mix-blend-mode: multiply; }
+            .hl * { fill: yellow; fill-opacity: 0.3; mix-blend-mode: multiply; }
+            .hl:hover { fill: gold !important; fill-opacity: 0.5 !important; }
+            .hl-active { 
+              fill: goldenrod !important; 
+              fill-opacity: 0.6 !important; 
+            }
+            .hl-active * { 
+              fill: goldenrod !important; 
+              fill-opacity: 0.6 !important; 
+            }
+          `
+          view.document.head.appendChild(style)
+        })
+
+        setRendition(rendition)
+        
+        // Load highlights from DB
+        fetchHighlights(fileId).then((loadedHighlights: HighlightRecord[]) => {
+          if (isCancelled) return
+          loadedHighlights.forEach((hl: HighlightRecord) => {
+            const styles = { fill: 'yellow', 'fill-opacity': '0.3', 'mix-blend-mode': 'multiply' } as any
+            ;(rendition.annotations as any).highlight(hl.cfiRange, {}, (e: MouseEvent) => {
+              handleHighlightClick(hl, e)
+            }, 'hl', styles)
+          })
+        })
+        
+        return book.ready
+      })
+      .then(async () => {
+        if (isCancelled) { return Promise.reject(new Error('Cancelled')) }
+        
+        const savedProgress = await getReadingProgress(fileId)
+        if (isCancelled) { return Promise.reject(new Error('Cancelled')) }
+
+        // Attach event listeners
+        renditionRef.current.on('relocated', (newLocation: any) => {
+          if (isCancelled) return
+          currentLocationCfi = newLocation.start.cfi
+          
+          // Re-apply active state on relocation
+          applyActiveStateAcrossViews()
+          
+          if (locationsReady) {
+            const currentPage = bookRef.current.locations.locationFromCfi(newLocation.start.cfi)
+            const totalPages = bookRef.current.locations.total
             setPageInfo({ currentPage, totalPages })
-            isInitialRender = false
           }
-        }
-      })
+        })
 
-      rendition.on('displayError', (err: Error) => {
-        if (!isCancelled) {
-          setError(err.message)
-        }
-      });
-      
-      setRendition(rendition)
-      
-      rendition.display(savedProgress?.location).catch((err: Error) => {
-        if (!isCancelled) {
+        renditionRef.current.on('displayed', () => {
+          if (isCancelled) return
+          setIsBookReady(true)
+          
+          bookRef.current.locations.generate(1650).then(() => {
+            if (isCancelled) return
+            locationsReady = true
+            setIsLoading(false)
+            
+            const initialLocation = renditionRef.current.currentLocation()
+            currentLocationCfi = initialLocation.start.cfi
+            
+            const currentPage = bookRef.current.locations.locationFromCfi(initialLocation.start.cfi)
+            const totalPages = bookRef.current.locations.total
+            setPageInfo({ currentPage, totalPages })
+
+            // Ensure active state applied after initial display
+            applyActiveStateAcrossViews()
+          })
+        })
+
+        renditionRef.current.on('displayError', (err: Error) => {
+          if (!isCancelled) setError(err.message)
+        });
+        
+        // Display the book at the saved location, or the beginning
+        return renditionRef.current.display(savedProgress?.location)
+      })
+      .catch((err: Error) => {
+        if (!isCancelled && err.message !== 'Cancelled') {
           setError(err.message)
           setIsLoading(false)
         }
       })
-    })
 
     return () => {
       isCancelled = true
-      if (rendition) {
-        rendition.destroy()
+      
+      // Save final position on unmount if possible
+      if (locationsReady && currentLocationCfi && bookRef.current) {
+        const cfi = currentLocationCfi
+        if (!cfi) return
+
+        const progress = bookRef.current.locations.percentageFromCfi(cfi)
+        updateReadingProgress(fileId, cfi, progress).catch((err: Error) => {
+          if (err.message.includes('404')) {
+            saveReadingProgress(fileId, cfi, progress)
+          }
+        })
       }
-      if (book) {
-        book.destroy()
+
+      if (renditionRef.current) {
+        renditionRef.current.destroy()
+      }
+      if (bookRef.current) {
+        bookRef.current.destroy()
       }
     }
   }, [fileId, fileUrl])
@@ -145,15 +279,15 @@ export default function EpubViewer({ fileId, fileUrl, fileName, onClose }: EpubV
 
   useEffect(() => {
     localStorage.setItem('epub-font-size', String(fontSize))
-    if (rendition) {
+      if (rendition) {
       rendition.themes.fontSize(`${fontSize}px`)
     }
   }, [fontSize, rendition])
 
   useEffect(() => {
     localStorage.setItem('epub-theme', theme)
-    if (rendition) {
-      rendition.themes.default(THEMES[theme])
+        if (rendition) {
+      (rendition.themes as any).select(theme)
     }
   }, [theme, rendition])
 
@@ -176,150 +310,187 @@ export default function EpubViewer({ fileId, fileUrl, fileName, onClose }: EpubV
     return () => {
       // Clean up from both
       window.removeEventListener('keydown', handleKeyDown)
-      if (rendition) {
+    if (rendition) {
         // The .off method exists on the Emitter mixin, even if not in all type defs
         ;(rendition as any).off('keydown', handleKeyDown)
       }
     }
   }, [rendition, prevPage, nextPage])
 
-  return (
-    <div style={{
-      position: 'fixed',
-      inset: 0,
-      background: 'rgba(0,0,0,0.9)',
-      display: 'flex',
-      flexDirection: 'column',
-      zIndex: 2000,
-    }}>
-      {/* Header */}
+  const redrawAnnotation = useCallback((hl: HighlightRecord, isActive: boolean) => {
+    const renditionAsAny = renditionRef.current as any;
+    if (!renditionAsAny) return;
+
+    try {
+      renditionAsAny.annotations.remove(hl.cfiRange, 'highlight');
+    } catch (e) {
+      // It's okay if this fails, it might not be on the current page
+    }
+    
+    const styles = isActive
+      ? { fill: 'goldenrod', 'fill-opacity': '0.6', 'mix-blend-mode': 'multiply' }
+      : { fill: 'yellow', 'fill-opacity': '0.3', 'mix-blend-mode': 'multiply' }
+
+    renditionAsAny.annotations.highlight(
+      hl.cfiRange,
+      {},
+      (e: MouseEvent) => handleHighlightClick(hl, e),
+      isActive ? 'hl-active' : 'hl',
+      styles
+    );
+  }, []);
+
+  const closeHighlightPanel = () => {
+    if (activeHighlightRef.current) {
+      redrawAnnotation(activeHighlightRef.current, false);
+    }
+    setSelectedHighlightText(null)
+    setActiveHighlight(null)
+  }
+
+  const handleHighlightClick = (hl: HighlightRecord, e: MouseEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+
+    const currentActive = activeHighlightRef.current;
+    const isCurrentlyActive = currentActive?.id === hl.id;
+
+    // Deactivate previously active highlight
+    if (currentActive && !isCurrentlyActive) {
+      redrawAnnotation(currentActive, false);
+    }
+
+    if (isCurrentlyActive) {
+      // Toggle off
+      redrawAnnotation(hl, false);
+      setActiveHighlight(null);
+      setSelectedHighlightText(null);
+    } else {
+      // Activate new one
+      redrawAnnotation(hl, true);
+      setActiveHighlight(hl);
+      setSelectedHighlightText(hl.text);
+    }
+  }
+
+  const addHighlight = useCallback(async (cfiRange: string, contents: any) => {
+    if (!rendition) return
+    const text = contents.window.getSelection().toString()
+    if (!text) return
+
+    contents.window.getSelection().removeAllRanges()
+    setCurrentSelection(null)
+
+    try {
+      const newHighlight = await saveHighlight(fileId, cfiRange, text, 'yellow')
+
+      // Deactivate previously active highlight
+      if (activeHighlightRef.current) {
+        redrawAnnotation(activeHighlightRef.current, false);
+      }
+      
+      // Add and activate the new highlight
+      redrawAnnotation(newHighlight, true);
+      setActiveHighlight(newHighlight)
+      setSelectedHighlightText(newHighlight.text)
+
+    } catch (error) {
+      console.error('Failed to save highlight:', error)
+    }
+  }, [rendition, fileId, redrawAnnotation])
+
+  const handleDeleteHighlight = useCallback(async () => {
+    if (!activeHighlight || !rendition) return
+
+    try {
+      await deleteHighlight(activeHighlight.id)
+      ;(rendition as any).annotations.remove(activeHighlight.cfiRange, 'highlight')
+      closeHighlightPanel()
+    } catch (error) {
+      console.error('Failed to delete highlight:', error)
+      // Optionally, show an error to the user
+    }
+  }, [rendition, activeHighlight])
+
+  const handleNoteChange = useCallback(async (note: string) => {
+    if (!activeHighlight) return
+    console.log(`[DEBUG] handleNoteChange called for highlight ${activeHighlight.id} with note:`, note);
+
+    try {
+      await updateHighlightNote(activeHighlight.id, note)
+      console.log('[DEBUG] updateHighlightNote successful.');
+      setActiveHighlight(current => current ? { ...current, note } : null)
+    } catch (error) {
+      console.error('[DEBUG] Failed to save note:', error)
+      // Optionally show an error to the user
+    }
+  }, [activeHighlight])
+
+  useEffect(() => {
+    if (!rendition) return
+    
+    const handleSelection = (cfiRange: string, contents: any) => {
+      const selection = contents.window.getSelection()
+      
+      // Check if this is a real drag-selection and not just a click
+      if (selection && !selection.isCollapsed && selection.toString().length > 0) {
+        // If a highlight is active, close it to make way for the new selection prompt
+        if (activeHighlight) {
+          closeHighlightPanel()
+        }
+        setCurrentSelection({ cfiRange, contents })
+      } else {
+        // This was just a click, not a drag-selection. 
+        // If the "Press Shift+H" prompt is visible, hide it.
+        if (currentSelection) {
+          setCurrentSelection(null)
+        }
+      }
+    }
+
+    const handleKeyPress = (e: KeyboardEvent) => {
+      if (e.shiftKey && e.key === 'H' && currentSelection) {
+        addHighlight(currentSelection.cfiRange, currentSelection.contents)
+      }
+    }
+    
+    ;(rendition as any).on('selected', handleSelection)
+    ;(rendition as any).on('keyup', handleKeyPress)
+
+    return () => {
+      ;(rendition as any).off('selected', handleSelection)
+      ;(rendition as any).off('keyup', handleKeyPress)
+    }
+  }, [rendition, addHighlight, currentSelection, activeHighlight])
+
+    return (
       <div style={{
+        position: 'fixed',
+        inset: 0,
+        background: 'rgba(0,0,0,0.9)',
         display: 'flex',
-        justifyContent: 'space-between',
-        alignItems: 'center',
-        padding: '1rem',
-        background: '#2a2a2a',
-        borderBottom: '1px solid #3a3a3a',
-        color: 'white'
+        zIndex: 2000,
       }}>
-        <div style={{ display: 'flex', alignItems: 'center', gap: '1rem' }}>
-          <h2 style={{ margin: 0, fontSize: '1.1rem' }}>📖 {fileName}</h2>
-          {/* Font Size Controls */}
-          <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
-            <span style={{ fontSize: '0.9rem' }}>Font:</span>
-            <button
-              className="btn"
-              onClick={() => setFontSize(s => Math.max(12, s - 1))}
-              style={{ fontSize: '0.8rem', padding: '0.2rem 0.4rem' }}
-              disabled={!isBookReady}
-            >
-              A-
-            </button>
-            <span style={{ fontSize: '0.9rem', minWidth: '2rem', textAlign: 'center' }}>
-              {fontSize}px
-            </span>
-            <button
-              className="btn"
-              onClick={() => setFontSize(s => Math.min(32, s + 1))}
-              style={{ fontSize: '0.8rem', padding: '0.2rem 0.4rem' }}
-              disabled={!isBookReady}
-            >
-              A+
-            </button>
-          </div>
-
-          {/* Theme Toggle */}
-          <button
-            className="btn"
-            onClick={() => setTheme(t => t === 'dark' ? 'light' : 'dark')}
-            style={{ fontSize: '0.8rem', padding: '0.3rem 0.6rem' }}
-            disabled={!isBookReady}
-          >
-            {theme === 'dark' ? '☀️ Light' : '🌙 Dark'}
-          </button>
-        </div>
-        <div>
-          <button className="btn" onClick={prevPage} style={{ marginRight: '1rem' }} disabled={!isBookReady}>
-            ‹ Prev
-          </button>
-          <button className="btn" onClick={nextPage} disabled={!isBookReady}>
-            Next ›
-          </button>
-        </div>
-        <button
-          className="btn"
-          onClick={onClose}
-          style={{ fontSize: '1.2rem', padding: '0.5rem' }}
-        >
-          ← Back
-        </button>
+        <EpubSidebar
+          fileName={fileName}
+          isBookReady={isBookReady}
+          fontSize={fontSize}
+          theme={theme}
+          currentSelection={currentSelection}
+          selectedHighlightText={selectedHighlightText}
+          activeHighlight={activeHighlight}
+          pageInfo={pageInfo}
+          isLoading={isLoading}
+          onClose={onClose}
+          onNextPage={nextPage}
+          onPrevPage={prevPage}
+          onFontSizeChange={setFontSize}
+          onThemeChange={setTheme}
+          onCloseHighlightPanel={closeHighlightPanel}
+          onDeleteHighlight={handleDeleteHighlight}
+          onNoteChange={handleNoteChange}
+        />
+        <EpubContent ref={viewerRef} theme={theme} error={error} />
       </div>
-
-      {/* Content Area */}
-      <div style={{ 
-        flex: 1, 
-        position: 'relative', 
-        overflow: 'hidden',
-        background: theme === 'dark' ? '#1a1a1a' : '#00000000'
-      }}>
-        <div ref={viewerRef} style={{ height: '100%', background: theme === 'dark' ? '#1a1a1a' : '#fff' }} />
-
-        {isLoading && (
-          <div style={{
-            position: 'absolute',
-            inset: 0,
-            background: theme === 'dark' ? 'rgba(26, 26, 26, 0.8)' : 'rgba(255, 255, 255, 0.8)',
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'center',
-            color: theme === 'dark' ? 'white' : 'black',
-            fontSize: '1.2rem'
-          }}>
-            Loading Book...
-          </div>
-        )}
-
-        {error && (
-          <div style={{
-            position: 'absolute',
-            inset: 0,
-            background: theme === 'dark' ? 'rgba(26, 26, 26, 0.8)' : 'rgba(255, 255, 255, 0.8)',
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'center',
-            color: '#ff4444',
-            textAlign: 'center',
-            padding: '2rem'
-          }}>
-            <div>
-              <div style={{ marginBottom: '1rem' }}>Error loading book:</div>
-              <div>{error}</div>
-            </div>
-          </div>
-        )}
-      </div>
-
-      {/* Footer */}
-      <div style={{
-        background: '#2a2a2a',
-        padding: '0.5rem 1rem',
-        textAlign: 'center',
-        color: 'white',
-        borderTop: '1px solid #3a3a3a',
-        fontSize: '0.9rem',
-        height: '30px',
-        display: 'flex',
-        alignItems: 'center',
-        justifyContent: 'center',
-      }}>
-        {pageInfo ? (
-          <span>
-            Page {pageInfo.currentPage} of {pageInfo.totalPages}
-          </span>
-        ) : (
-          <span>&nbsp;</span>
-        )}
-      </div>
-    </div>
-  )
-}
+    )
+  }

@@ -28,9 +28,6 @@ export function filterWatermark(text: string, customPhrases: string[] = DEFAULT_
     }
   })
   
-  // Clean up extra whitespace
-  filteredText = filteredText.replace(/\s+/g, ' ').trim()
-  
   return filteredText
 }
 
