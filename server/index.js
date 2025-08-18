@@ -94,7 +94,7 @@ CREATE TABLE IF NOT EXISTS epub_files (
 );
 CREATE TABLE IF NOT EXISTS reading_progress (
   id TEXT PRIMARY KEY,
-  file_id TEXT NOT NULL,
+  file_id TEXT NOT NULL UNIQUE,
   location TEXT NOT NULL,
   progress REAL NOT NULL DEFAULT 0,
   last_read_at INTEGER NOT NULL,
@@ -407,7 +407,8 @@ app.post('/api/reading-progress', (req, res) => {
   }
 
   try {
-    db.prepare('INSERT INTO reading_progress (id, file_id, location, progress, last_read_at) VALUES (?, ?, ?, ?, ?)')
+    // Use INSERT OR REPLACE to handle the unique constraint on file_id
+    db.prepare('INSERT OR REPLACE INTO reading_progress (id, file_id, location, progress, last_read_at) VALUES (?, ?, ?, ?, ?)')
       .run(id, fileId, location, progress, lastReadAt)
     res.status(201).json({ ok: true })
   } catch (error) {
@@ -434,14 +435,11 @@ app.patch('/api/reading-progress/:fileId', (req, res) => {
   }
 
   try {
-    const result = db.prepare('UPDATE reading_progress SET location = ?, progress = ?, last_read_at = ? WHERE file_id = ?')
-      .run(location, progress, lastReadAt, req.params.fileId)
-    
-    if (result.changes === 0) {
-      res.status(404).json({ error: 'Reading progress not found' })
-    } else {
-      res.json({ ok: true })
-    }
+    // Use INSERT OR REPLACE to create or update in one operation
+    const id = req.body.id || require('crypto').randomUUID()
+    db.prepare('INSERT OR REPLACE INTO reading_progress (id, file_id, location, progress, last_read_at) VALUES (?, ?, ?, ?, ?)')
+      .run(id, req.params.fileId, location, progress, lastReadAt)
+    res.json({ ok: true })
   } catch (error) {
     console.error('Reading progress update error:', error)
     res.status(500).json({ error: 'Failed to update reading progress' })

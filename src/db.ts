@@ -289,11 +289,14 @@ export async function getReadingProgress(fileId: string): Promise<ReadingProgres
 }
 
 export async function updateReadingProgress(fileId: string, location: string, progress: number): Promise<void> {
-  await fetch(`${API_BASE}/reading-progress/${fileId}`, { 
+  const res = await fetch(`${API_BASE}/reading-progress/${fileId}`, { 
     method: 'PATCH', 
     headers: { 'Content-Type': 'application/json' }, 
     body: JSON.stringify({ location, progress, lastReadAt: Date.now() }) 
   })
+  if (!res.ok) {
+    throw new Error('Failed to update reading progress')
+  }
 }
 
 

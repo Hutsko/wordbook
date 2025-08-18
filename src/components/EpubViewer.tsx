@@ -1,7 +1,7 @@
-import { useEffect, useRef, useState } from 'react'
+import { useEffect, useRef, useState, useCallback } from 'react'
 import { Book, Rendition } from 'epubjs'
 import JSZip from 'jszip'
-import { getReadingProgress, saveReadingProgress, updateReadingProgress } from '../db'
+import { getReadingProgress, updateReadingProgress } from '../db'
 
 interface EpubViewerProps {
   fileId: string
@@ -23,27 +23,38 @@ export default function EpubViewer({ fileId, fileUrl, fileName, onClose }: EpubV
   const [isLoadingBook, setIsLoadingBook] = useState(false)
   const [readingProgress, setReadingProgress] = useState<{ location: string; progress: number } | null>(null)
 
-  // Function to save reading progress
-  const saveReadingProgressOnLocationChange = async (location: any) => {
-    try {
-      const locationHref = location.start.href
-      const progress = location.start.percentage || 0
-      
-      // Try to update existing progress first, if that fails, create new
-      try {
-        await updateReadingProgress(fileId, locationHref, progress)
-        console.log('Updated reading progress:', { location: locationHref, progress })
-      } catch (err) {
-        // If update fails (e.g., no existing record), create new
-        await saveReadingProgress(fileId, locationHref, progress)
-        console.log('Created new reading progress:', { location: locationHref, progress })
+  // Debounced function to save reading progress
+  const debouncedSaveProgress = useCallback(
+    (() => {
+      let timeoutId: NodeJS.Timeout | null = null
+      return async (location: any) => {
+        if (timeoutId) {
+          clearTimeout(timeoutId)
+        }
+        
+        timeoutId = setTimeout(async () => {
+          try {
+            const locationHref = location.start?.href
+            const progress = Math.max(0, Math.min(1, location.start?.percentage || 0))
+            
+            if (!locationHref) {
+              console.warn('Invalid location href, skipping save')
+              return
+            }
+            
+            // Use updateReadingProgress which now handles both create and update
+            await updateReadingProgress(fileId, locationHref, progress)
+            console.log('Updated reading progress:', { location: locationHref, progress })
+            
+            setReadingProgress({ location: locationHref, progress })
+          } catch (err) {
+            console.error('Failed to save reading progress:', err)
+          }
+        }, 1000) // Debounce for 1 second
       }
-      
-      setReadingProgress({ location: locationHref, progress })
-    } catch (err) {
-      console.error('Failed to save reading progress:', err)
-    }
-  }
+    })(),
+    [fileId]
+  )
 
   // Make JSZip available globally for EPUB.js
   useEffect(() => {
@@ -223,9 +234,11 @@ export default function EpubViewer({ fileId, fileUrl, fileName, onClose }: EpubV
 
           // Set up location change listener
           newRendition.on('relocated', (location: any) => {
-            setCurrentLocation(location.start.href)
-            // Save reading progress when location changes
-            saveReadingProgressOnLocationChange(location)
+            if (location.start?.href) {
+              setCurrentLocation(location.start.href)
+              // Save reading progress when location changes (debounced)
+              debouncedSaveProgress(location)
+            }
           })
 
           setBook(newBook)
@@ -266,11 +279,7 @@ export default function EpubViewer({ fileId, fileUrl, fileName, onClose }: EpubV
     // Cleanup function
     return () => {
       console.log('Cleanup function called')
-      // Save final reading progress before cleanup
-      if (rendition && currentLocation) {
-        console.log('Saving final reading progress before cleanup...')
-        saveReadingProgressOnLocationChange({ start: { href: currentLocation, percentage: 0 } })
-      }
+      // No need to save progress in cleanup - debounced function will handle final save
       if (rendition) {
         console.log('Destroying rendition in cleanup...')
         rendition.destroy()
@@ -280,7 +289,7 @@ export default function EpubViewer({ fileId, fileUrl, fileName, onClose }: EpubV
         viewerRef.current.innerHTML = ''
       }
     }
-  }, [fileId, fileUrl])
+  }, [fileId, fileUrl, debouncedSaveProgress])
 
   // Keyboard navigation
   useEffect(() => {
